@@ -117,8 +117,10 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
 
         if self._episode_done:
             obs = {}
+            infos = {}
         else:
             obs = {self._next_player: self._build_obs(self._next_player)}
+            infos = {self._next_player: {"round": self.rounds_completed + 1}}
 
         rewards = {
             AGENT_IDS[0]: reward_player_1,
@@ -131,18 +133,6 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
             terminateds.update({AGENT_IDS[0]: terminated_all, AGENT_IDS[1]: terminated_all})
             truncateds.update({AGENT_IDS[0]: truncated_all, AGENT_IDS[1]: truncated_all})
 
-        infos = {
-            AGENT_IDS[0]: {
-                "round": self.rounds_completed,
-                "action": ACTION_NAMES[player_1_action],
-                "reward": reward_player_1,
-            },
-            AGENT_IDS[1]: {
-                "round": self.rounds_completed,
-                "action": ACTION_NAMES[player_2_action],
-                "reward": reward_player_2,
-            },
-        }
         return obs, rewards, terminateds, truncateds, infos
 
     def _build_obs(self, agent_id: str):

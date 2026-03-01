@@ -14,17 +14,17 @@ from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.tune.registry import register_env
 
+# Allow running as `python scripts/train_eval_rllib.py ...` from project root.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from envs.prisoners_dilemma_env import (
     AGENT_IDS,
     COOPERATE,
     ENV_NAME,
     SequentialPrisonersDilemmaEnv,
 )
-
-# Allow running as `python scripts/train_eval_rllib.py ...` from project root.
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 
@@ -49,9 +49,14 @@ def build_algorithm(args) -> Algorithm:
         "policy_player_2": (None, tmp_env.observation_space, tmp_env.action_space, {}),
     }
 
+    config = PPOConfig()
+    if hasattr(config, "api_stack"):
+        config = config.api_stack(
+            enable_rl_module_and_learner=False,
+            enable_env_runner_and_connector_v2=False,
+        )
     config = (
-        PPOConfig()
-        .environment(ENV_NAME, env_config=env_config)
+        config.environment(ENV_NAME, env_config=env_config)
         .framework(args.framework)
         .multi_agent(
             policies=policies,
@@ -62,10 +67,10 @@ def build_algorithm(args) -> Algorithm:
         .training(lr=args.lr)
     )
 
-    # RLlib changed rollout APIs across versions; keep compatibility.
+    # RLlib rollout worker APIs changed across versions; keep compatibility.
     if hasattr(config, "env_runners"):
         config = config.env_runners(num_env_runners=args.num_workers)
-    else:
+    elif hasattr(config, "rollouts"):
         config = config.rollouts(num_rollout_workers=args.num_workers)
 
     if args.train_batch_size is not None:
