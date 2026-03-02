@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import deque
 from typing import Dict, Tuple
 
 import numpy as np
@@ -32,9 +31,11 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
     Rules:
     - Player 1 acts first, then Player 2 acts.
     - A payoff is assigned after both actions in the round are known.
-    - Episode length is fixed: it always runs for `max_rounds`.
-    - If `reward_window` is set (>0), the episode return tracks only the most
-      recent N round payoffs via delta rewards.
+    - Horizon mode can be one of:
+      - `fixed`: always run exactly `max_rounds`.
+      - `random_revealed`: sample episode horizon in [min_rounds, max_rounds].
+      - `random_continuation`: after each round (after `min_rounds`), continue with
+        probability `continuation_prob`; stop otherwise.
     """
 
     def __init__(self, config=None):
@@ -44,10 +45,21 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
         self.max_rounds = int(config.get("max_rounds", 50))
         if self.max_rounds <= 0:
             raise ValueError("max_rounds must be > 0")
-        reward_window = int(config.get("reward_window", 10))
-        if reward_window <= 0:
-            raise ValueError("reward_window must be > 0")
-        self.reward_window = reward_window
+        self.min_rounds = int(config.get("min_rounds", self.max_rounds))
+        if self.min_rounds <= 0:
+            raise ValueError("min_rounds must be > 0")
+        if self.min_rounds > self.max_rounds:
+            raise ValueError("min_rounds must be <= max_rounds")
+        self.horizon_mode = str(config.get("horizon_mode", "fixed"))
+        valid_horizon_modes = {"fixed", "random_revealed", "random_continuation"}
+        if self.horizon_mode not in valid_horizon_modes:
+            raise ValueError(
+                f"horizon_mode must be one of {sorted(valid_horizon_modes)}; "
+                f"got {self.horizon_mode!r}"
+            )
+        self.continuation_prob = float(config.get("continuation_prob", 0.95))
+        if not 0.0 <= self.continuation_prob <= 1.0:
+            raise ValueError("continuation_prob must be in [0.0, 1.0]")
 
         # Observation = [last_own_action, last_opponent_action, round_progress]
         # last actions use -1.0 before first complete round.
@@ -76,9 +88,7 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
         self._last_joint_actions = (-1, -1)
         self.rounds_completed = 0
         self._episode_done = False
-        self._recent_round_rewards = {
-            agent_id: deque(maxlen=self.reward_window) for agent_id in AGENT_IDS
-        }
+        self._episode_horizon = self.max_rounds
 
     def reset(self, *, seed=None, options=None):
         if seed is not None:
@@ -89,11 +99,16 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
         self._last_joint_actions = (-1, -1)
         self.rounds_completed = 0
         self._episode_done = False
-        for history in self._recent_round_rewards.values():
-            history.clear()
+        self._episode_horizon = self._sample_episode_horizon()
 
         obs = {self._next_player: self._build_obs(self._next_player)}
-        infos = {self._next_player: {"round": 1}}
+        infos = {
+            self._next_player: {
+                "round": 1,
+                "episode_horizon": self._episode_horizon,
+                "horizon_mode": self.horizon_mode,
+            }
+        }
         return obs, infos
 
     def step(self, action_dict):
@@ -116,23 +131,25 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
             rewards = {AGENT_IDS[0]: 0.0, AGENT_IDS[1]: 0.0}
             terminateds = {"__all__": False}
             truncateds = {"__all__": False}
-            infos = {self._next_player: {"round": self.rounds_completed + 1}}
+            infos = {
+                self._next_player: {
+                    "round": self.rounds_completed + 1,
+                    "episode_horizon": self._episode_horizon,
+                    "horizon_mode": self.horizon_mode,
+                }
+            }
             return obs, rewards, terminateds, truncateds, infos
 
         # Phase 2: Player 2 acts, round is complete, compute payoff.
         player_1_action = int(self._pending_action_player_1)
         player_2_action = action
-        base_reward_player_1, base_reward_player_2 = PAYOFF_MATRIX[
-            (player_1_action, player_2_action)
-        ]
-        reward_player_1 = self._windowed_reward(AGENT_IDS[0], base_reward_player_1)
-        reward_player_2 = self._windowed_reward(AGENT_IDS[1], base_reward_player_2)
+        reward_player_1, reward_player_2 = PAYOFF_MATRIX[(player_1_action, player_2_action)]
 
         self.rounds_completed += 1
         self._last_joint_actions = (player_1_action, player_2_action)
         self._pending_action_player_1 = None
 
-        terminated_all = self.rounds_completed >= self.max_rounds
+        terminated_all = self._should_terminate_episode()
         truncated_all = False
 
         self._episode_done = terminated_all or truncated_all
@@ -142,10 +159,23 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
             # RLlib's new API stack expects final observations for ended agents,
             # especially for truncation value-bootstrapping.
             obs = {agent_id: self._build_obs(agent_id) for agent_id in AGENT_IDS}
-            infos = {agent_id: {"round": self.rounds_completed} for agent_id in AGENT_IDS}
+            infos = {
+                agent_id: {
+                    "round": self.rounds_completed,
+                    "episode_horizon": self._episode_horizon,
+                    "horizon_mode": self.horizon_mode,
+                }
+                for agent_id in AGENT_IDS
+            }
         else:
             obs = {self._next_player: self._build_obs(self._next_player)}
-            infos = {self._next_player: {"round": self.rounds_completed + 1}}
+            infos = {
+                self._next_player: {
+                    "round": self.rounds_completed + 1,
+                    "episode_horizon": self._episode_horizon,
+                    "horizon_mode": self.horizon_mode,
+                }
+            }
 
         rewards = {
             AGENT_IDS[0]: reward_player_1,
@@ -165,12 +195,25 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
             own_last, opp_last = self._last_joint_actions
         else:
             opp_last, own_last = self._last_joint_actions
-        round_progress = float(self.rounds_completed) / float(self.max_rounds)
+        round_progress = float(self.rounds_completed) / float(self._episode_horizon)
         return np.array([float(own_last), float(opp_last), round_progress], dtype=np.float32)
 
-    def _windowed_reward(self, agent_id: str, round_reward: float) -> float:
-        """Return a reward delta so episode return equals sum of last N payoffs."""
-        history = self._recent_round_rewards[agent_id]
-        dropped = history[0] if len(history) == self.reward_window else 0.0
-        history.append(float(round_reward))
-        return float(round_reward) - float(dropped)
+    def _sample_episode_horizon(self) -> int:
+        if self.horizon_mode == "fixed":
+            return self.max_rounds
+        if self.horizon_mode == "random_revealed":
+            # np.random.randint upper bound is exclusive.
+            return int(np.random.randint(self.min_rounds, self.max_rounds + 1))
+        # random_continuation keeps max_rounds as a hard cap, but the actual
+        # stop round is stochastic and not known in advance.
+        return self.max_rounds
+
+    def _should_terminate_episode(self) -> bool:
+        if self.rounds_completed >= self.max_rounds:
+            return True
+        if self.horizon_mode in ("fixed", "random_revealed"):
+            return self.rounds_completed >= self._episode_horizon
+        # random_continuation
+        if self.rounds_completed < self.min_rounds:
+            return False
+        return np.random.random() >= self.continuation_prob

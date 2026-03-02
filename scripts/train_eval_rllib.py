@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 from importlib import import_module
 from pathlib import Path
@@ -48,7 +49,9 @@ def policy_mapping_fn(agent_id, *args, **kwargs):
 def build_algorithm(args) -> Algorithm:
     env_config = {
         "max_rounds": args.max_rounds,
-        "reward_window": args.reward_window,
+        "min_rounds": args.min_rounds,
+        "horizon_mode": args.horizon_mode,
+        "continuation_prob": args.continuation_prob,
     }
     register_env(ENV_NAME, env_creator)
 
@@ -70,6 +73,8 @@ def build_algorithm(args) -> Algorithm:
         .resources(num_gpus=args.num_gpus)
         .training(lr=args.lr)
     )
+    if args.seed is not None and hasattr(config, "debugging"):
+        config = config.debugging(seed=args.seed)
 
     # RLlib rollout worker APIs changed across versions; keep compatibility.
     if hasattr(config, "env_runners"):
@@ -218,12 +223,34 @@ def parse_args():
     )
     parser.add_argument("--max-rounds", type=int, default=50, help="Max rounds per episode.")
     parser.add_argument(
-        "--reward-window",
+        "--min-rounds",
         type=int,
-        default=10,
-        help="Only keep the last N round payoffs in the cumulative episode return.",
+        default=1,
+        help="Minimum rounds for random horizon modes (<= max-rounds).",
+    )
+    parser.add_argument(
+        "--horizon-mode",
+        type=str,
+        default="fixed",
+        choices=["fixed", "random_revealed", "random_continuation"],
+        help="How episode horizon is determined.",
+    )
+    parser.add_argument(
+        "--continuation-prob",
+        type=float,
+        default=0.95,
+        help=(
+            "For random_continuation mode: probability to continue after each round "
+            "(once min-rounds is reached)."
+        ),
     )
     parser.add_argument("--framework", type=str, default="torch", choices=["torch", "tf2"])
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Optional random seed for reproducible training/evaluation runs.",
+    )
     parser.add_argument("--lr", type=float, default=5e-4)
     parser.add_argument("--train-batch-size", type=int, default=None)
     parser.add_argument("--num-workers", type=int, default=0, help="RLlib rollout workers.")
@@ -245,9 +272,18 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.seed is not None:
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        if torch is not None and hasattr(torch, "manual_seed"):
+            torch.manual_seed(args.seed)
+    if args.min_rounds > args.max_rounds:
+        raise ValueError("min-rounds must be <= max-rounds")
     env_config = {
         "max_rounds": args.max_rounds,
-        "reward_window": args.reward_window,
+        "min_rounds": args.min_rounds,
+        "horizon_mode": args.horizon_mode,
+        "continuation_prob": args.continuation_prob,
     }
 
     ray.init(ignore_reinit_error=True, include_dashboard=False)

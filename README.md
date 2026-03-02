@@ -15,7 +15,7 @@ This project demonstrates a Tit-for-Tat-inspired repeated Prisoner's Dilemma set
   - `(D, C) -> (5, 0)`
   - `(D, D) -> (1, 1)`
 - Turn order is sequential each round: Player 1 then Player 2
-- Episodes are fixed-horizon (`max_rounds`): no early stop on defection
+- Horizon modes: `fixed`, `random_revealed`, `random_continuation`
 - Two independent RLlib policies are trained:
   - `policy_player_1` for `player_1`
   - `policy_player_2` for `player_2`
@@ -27,14 +27,11 @@ This project demonstrates a Tit-for-Tat-inspired repeated Prisoner's Dilemma set
   <p><strong>Display 1: The reward after each round.</strong></p>
 </div>
 
-Each episode is a repeated game with `max_rounds` rounds:
+Each episode is a repeated game with one of three horizon regimes:
 
-1. Player 1 acts.
-2. Player 2 acts.
-3. Round payoff is applied.
-4. Next round starts, regardless of whether someone defected.
-
-Optional: `reward_window` can be used so episode return only reflects the last `N` rounds (recency-weighted objective).
+1. `fixed`: always run exactly `max_rounds`.
+2. `random_revealed`: sample episode horizon in `[min_rounds, max_rounds]` and reveal it via observation progress/info.
+3. `random_continuation`: after each round (after `min_rounds`), continue with probability `continuation_prob`; stop otherwise.
 
 ## Research Question and Hypotheses
 
@@ -93,6 +90,34 @@ Useful options:
 # Adjust episode length
 python scripts/train_eval_rllib.py --max-rounds 100
 
-# Only count the last 10 round payoffs in cumulative return
-python scripts/train_eval_rllib.py --reward-window 10
+# Random horizon (revealed at episode start): sample T in [10, 50]
+python scripts/train_eval_rllib.py --horizon-mode random_revealed --min-rounds 10 --max-rounds 50
+
+# Random continuation (unknown final round): continue each round with prob 0.95
+python scripts/train_eval_rllib.py --horizon-mode random_continuation --min-rounds 1 --max-rounds 100 --continuation-prob 0.95
 ```
+
+## Experiment: Fixed Horizon (50 Rounds)
+
+Goal:
+
+- Test whether the finite-horizon setup converges to all-defect behavior.
+
+```bash
+python scripts/train_eval_rllib.py \
+  --train-iters 50 \
+  --eval-episodes 20 \
+  --horizon-mode fixed \
+  --max-rounds 50
+```
+
+Observed eval summary:
+
+- `mean_episode_reward`: `player_1=50.0`, `player_2=50.0`
+- `cooperation_rate`: `player_1=0.0`, `player_2=0.0`
+- `mean_rounds_per_episode`: `50.0`
+
+Interpretation:
+
+- This matches all-defect over 50 rounds: each round yields `(D,D) -> (1,1)`, totaling `50` per agent.
+- This is the expected finite-horizon baseline in the standard window-less setup.
