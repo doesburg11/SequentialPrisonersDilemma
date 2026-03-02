@@ -1,8 +1,8 @@
-# TitForTat
+# Sequential Iterated Prisoner's Dilemma (RLlib)
 
 ## Overview
 
-This project demonstrates a Tit-for-Tat-inspired repeated Prisoner's Dilemma setup with two independent learning agents using RLlib 2.54.0.
+This project studies a sequential iterated Prisoner's Dilemma with two independent learning agents using RLlib 2.54.0. Policies are learned via self-play.
 
 ## Environment and MARL Setup
 

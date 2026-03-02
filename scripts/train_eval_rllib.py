@@ -99,6 +99,37 @@ def extract_reward_mean(train_result: Dict) -> float:
     return float("nan")
 
 
+def extract_timesteps_total(train_result: Dict):
+    candidate_keys = (
+        "timesteps_total",
+        "num_env_steps_sampled_lifetime",
+        "num_env_steps_sampled",
+        "num_agent_steps_sampled_lifetime",
+        "num_agent_steps_sampled",
+        "env_runners/num_env_steps_sampled_lifetime",
+        "env_runners/num_env_steps_sampled",
+    )
+    for key in candidate_keys:
+        if key in train_result and train_result[key] is not None:
+            return train_result[key]
+
+    env_runner_metrics = train_result.get("env_runners", {})
+    for key in ("num_env_steps_sampled_lifetime", "num_env_steps_sampled"):
+        if key in env_runner_metrics and env_runner_metrics[key] is not None:
+            return env_runner_metrics[key]
+
+    counters = train_result.get("counters", {})
+    for key in ("num_env_steps_sampled", "num_env_steps_sampled_lifetime"):
+        if key in counters and counters[key] is not None:
+            return counters[key]
+
+    for key, value in train_result.items():
+        if key.endswith("/num_env_steps_sampled_lifetime") and value is not None:
+            return value
+
+    return "n/a"
+
+
 def _to_numpy(value):
     if torch is not None and isinstance(value, torch.Tensor):
         return value.detach().cpu().numpy()
@@ -297,9 +328,10 @@ def main():
             result = algo.train()
             if i == 1 or i == args.train_iters or i % 10 == 0:
                 reward_mean = extract_reward_mean(result)
+                timesteps_total = extract_timesteps_total(result)
                 print(
                     f"[train] iter={i} reward_mean={reward_mean:.3f} "
-                    f"timesteps_total={result.get('timesteps_total', 'n/a')}"
+                    f"timesteps_total={timesteps_total}"
                 )
 
         checkpoint_dir = _resolve_checkpoint_path(args.checkpoint_dir)
