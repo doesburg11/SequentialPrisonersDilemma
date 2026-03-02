@@ -15,27 +15,50 @@ This project demonstrates a Tit-for-Tat-inspired repeated Prisoner's Dilemma set
   - `(D, C) -> (5, 0)`
   - `(D, D) -> (1, 1)`
 - Turn order is sequential each round: Player 1 then Player 2
+- Episodes are fixed-horizon (`max_rounds`): no early stop on defection
 - Two independent RLlib policies are trained:
   - `policy_player_1` for `player_1`
   - `policy_player_2` for `player_2`
 
-## Strategy Used Here
-
-This project uses a strict sequential cooperation rule:
-
-1. Start by cooperating.
-2. In each round, Player 1 acts first, then Player 2 acts.
-3. Keep playing new rounds while both players cooperate.
-4. If a defection happens during a round, finish that round, then end the game.
+## Game Dynamics
 
 <div align="center">
   <img src="assets/prisoners_dilemma_matrix.svg" alt="Prisoner's Dilemma payoff matrix" width="400" />
   <p><strong>Display 1: The reward after each round.</strong></p>
 </div>
 
-Example: if Player 1 defects, Player 2 still gets a final move in that same round. After Player 2's move, the interaction terminates and no new round starts.
+Each episode is a repeated game with `max_rounds` rounds:
 
-This is stricter than classic Tit-for-Tat. In standard Tit-for-Tat, the game usually continues across many rounds with reciprocal responses. Here, any defection triggers termination after the current sequential round is completed.
+1. Player 1 acts.
+2. Player 2 acts.
+3. Round payoff is applied.
+4. Next round starts, regardless of whether someone defected.
+
+Optional: `reward_window` can be used so episode return only reflects the last `N` rounds (recency-weighted objective).
+
+## Research Question and Hypotheses
+
+This project is best framed as a finite-horizon RL question, not as a direct equilibrium solver.
+
+- Research question:
+  - In a fixed-horizon iterated Prisoner's Dilemma, do independently trained PPO agents converge to backward-induction-like defection, or to cooperative conventions?
+- Hypothesis H1 (game-theoretic target):
+  - If learning approximates subgame-perfect play, defection probability should be high from early rounds and remain high.
+- Hypothesis H2 (RL/self-play behavior):
+  - With function approximation and self-play dynamics, agents may sustain cooperation for many rounds and defect only near the end (or remain cooperative throughout).
+
+PPO drawback (important):
+
+- Independent PPO self-play is not an equilibrium-finding algorithm.
+- In this setup, each agent optimizes against a moving opponent policy, but PPO does not directly solve the Nash fixed-point condition ("no unilateral profitable deviation").
+- As opposed to equilibrium-focused methods (e.g., backward induction, CFR-style methods, or PSRO + best-response checks), PPO alone does not provide equilibrium guarantees.
+
+Recommended reporting:
+
+- Defection/cooperation rate by round index `t`
+- Mean episode return
+- Mean rounds (fixed at `max_rounds` by design)
+- Multiple random seeds (to detect equilibrium-selection effects)
 
 ## Historical Background (Rapoport / Axelrod)
 
@@ -61,15 +84,15 @@ python scripts/train_eval_rllib.py --train-iters 50 --eval-episodes 20
 Evaluate only from a saved checkpoint:
 
 ```bash
-python scripts/train_eval_rllib.py --from-checkpoint checkpoints/sequential_pd_ppo/checkpoint_000050 --eval-episodes 50
+python scripts/train_eval_rllib.py --from-checkpoint checkpoints/sequential_pd_ppo --eval-episodes 50
 ```
 
 Useful options:
 
 ```bash
-# Keep playing until max_rounds even after defection
-python scripts/train_eval_rllib.py --no-terminate-on-defection
-
 # Adjust episode length
 python scripts/train_eval_rllib.py --max-rounds 100
+
+# Only count the last 10 round payoffs in cumulative return
+python scripts/train_eval_rllib.py --reward-window 10
 ```

@@ -6,26 +6,35 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from importlib import import_module
 from pathlib import Path
 from typing import Dict
 
+import numpy as np
 import ray
 from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.algorithms.ppo import PPOConfig
+from ray.rllib.core import Columns
 from ray.tune.registry import register_env
+from ray.rllib.utils.framework import try_import_torch
 
-# Allow running as `python scripts/train_eval_rllib.py ...` from project root.
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+# Resolve env imports for both:
+# - `python scripts/train_eval_rllib.py` (script dir on sys.path)
+# - `python -m scripts.train_eval_rllib` (project root on sys.path)
+try:
+    _env_module = import_module("envs.prisoners_dilemma_env")
+except ModuleNotFoundError:
+    project_root = Path(__file__).resolve().parents[1]
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    _env_module = import_module("envs.prisoners_dilemma_env")
 
-from envs.prisoners_dilemma_env import (
-    AGENT_IDS,
-    COOPERATE,
-    ENV_NAME,
-    SequentialPrisonersDilemmaEnv,
-)
+AGENT_IDS = _env_module.AGENT_IDS
+COOPERATE = _env_module.COOPERATE
+ENV_NAME = _env_module.ENV_NAME
+SequentialPrisonersDilemmaEnv = _env_module.SequentialPrisonersDilemmaEnv
 
+torch, _ = try_import_torch()
 
 
 def env_creator(env_config):
@@ -39,21 +48,16 @@ def policy_mapping_fn(agent_id, *args, **kwargs):
 def build_algorithm(args) -> Algorithm:
     env_config = {
         "max_rounds": args.max_rounds,
-        "terminate_on_defection": args.terminate_on_defection,
+        "reward_window": args.reward_window,
     }
     register_env(ENV_NAME, env_creator)
 
-    tmp_env = SequentialPrisonersDilemmaEnv(env_config)
-    policies = {
-        "policy_player_1": (None, tmp_env.observation_space, tmp_env.action_space, {}),
-        "policy_player_2": (None, tmp_env.observation_space, tmp_env.action_space, {}),
-    }
-
+    policies = {f"policy_{agent_id}" for agent_id in AGENT_IDS}
     config = PPOConfig()
     if hasattr(config, "api_stack"):
         config = config.api_stack(
-            enable_rl_module_and_learner=False,
-            enable_env_runner_and_connector_v2=False,
+            enable_rl_module_and_learner=True,
+            enable_env_runner_and_connector_v2=True,
         )
     config = (
         config.environment(ENV_NAME, env_config=env_config)
@@ -61,7 +65,7 @@ def build_algorithm(args) -> Algorithm:
         .multi_agent(
             policies=policies,
             policy_mapping_fn=policy_mapping_fn,
-            policies_to_train=list(policies.keys()),
+            policies_to_train=list(policies),
         )
         .resources(num_gpus=args.num_gpus)
         .training(lr=args.lr)
@@ -76,6 +80,8 @@ def build_algorithm(args) -> Algorithm:
     if args.train_batch_size is not None:
         config = config.training(train_batch_size=args.train_batch_size)
 
+    if hasattr(config, "build_algo"):
+        return config.build_algo()
     return config.build()
 
 
@@ -86,6 +92,66 @@ def extract_reward_mean(train_result: Dict) -> float:
     if "episode_return_mean" in env_runner_metrics:
         return float(env_runner_metrics["episode_return_mean"])
     return float("nan")
+
+
+def _to_numpy(value):
+    if torch is not None and isinstance(value, torch.Tensor):
+        return value.detach().cpu().numpy()
+    if hasattr(value, "detach") and callable(value.detach):
+        value = value.detach()
+    if hasattr(value, "cpu") and callable(value.cpu):
+        value = value.cpu()
+    if hasattr(value, "numpy") and callable(value.numpy):
+        return value.numpy()
+    return np.asarray(value)
+
+
+def _extract_first_action(action_batch) -> int:
+    action_np = _to_numpy(action_batch)
+    return int(np.asarray(action_np).reshape(-1)[0])
+
+
+def _resolve_checkpoint_path(path: str) -> str:
+    if "://" in path:
+        return path
+    return str(Path(path).expanduser().resolve())
+
+
+def compute_eval_action(algo: Algorithm, policy_id: str, observation) -> int:
+    module = algo.get_module(policy_id)
+    if module is not None:
+        obs_batch = np.expand_dims(np.asarray(observation, dtype=np.float32), axis=0)
+        batch = {Columns.OBS: obs_batch}
+
+        if getattr(module, "framework", None) == "torch" and torch is not None:
+            batch[Columns.OBS] = torch.from_numpy(obs_batch)
+            with torch.no_grad():
+                module_out = module.forward_inference(batch)
+        else:
+            module_out = module.forward_inference(batch)
+
+        if Columns.ACTIONS in module_out:
+            return _extract_first_action(module_out[Columns.ACTIONS])
+        if Columns.ACTIONS_FOR_ENV in module_out:
+            return _extract_first_action(module_out[Columns.ACTIONS_FOR_ENV])
+        if Columns.ACTION_DIST_INPUTS in module_out:
+            action_dist_cls = module.get_inference_action_dist_cls()
+            if action_dist_cls is None:
+                raise ValueError(f"Inference distribution missing for module={policy_id!r}")
+            action_dist = action_dist_cls.from_logits(module_out[Columns.ACTION_DIST_INPUTS])
+            return _extract_first_action(action_dist.to_deterministic().sample())
+        raise ValueError(
+            f"Module output for {policy_id!r} missing action keys: "
+            f"{list(module_out.keys())}"
+        )
+
+    # Backward-compat fallback if an old checkpoint restores policies only.
+    policy = algo.get_policy(policy_id)
+    if policy is None:
+        raise ValueError(f"Policy not found for policy_id={policy_id!r}")
+
+    actions, _state_out, _extra = policy.compute_actions([observation], explore=False)
+    return int(actions[0])
 
 
 def evaluate(algo: Algorithm, episodes: int, env_config: Dict) -> Dict:
@@ -106,13 +172,7 @@ def evaluate(algo: Algorithm, episodes: int, env_config: Dict) -> Dict:
             actions = {}
             for agent_id, agent_obs in obs.items():
                 policy_id = policy_mapping_fn(agent_id)
-                action = int(
-                    algo.compute_single_action(
-                        observation=agent_obs,
-                        policy_id=policy_id,
-                        explore=False,
-                    )
-                )
+                action = compute_eval_action(algo, policy_id, agent_obs)
                 actions[agent_id] = action
                 action_counts[agent_id] += 1
                 if action == COOPERATE:
@@ -158,17 +218,10 @@ def parse_args():
     )
     parser.add_argument("--max-rounds", type=int, default=50, help="Max rounds per episode.")
     parser.add_argument(
-        "--terminate-on-defection",
-        dest="terminate_on_defection",
-        action="store_true",
-        default=True,
-        help="End after the round in which any player defects.",
-    )
-    parser.add_argument(
-        "--no-terminate-on-defection",
-        dest="terminate_on_defection",
-        action="store_false",
-        help="Keep playing to max_rounds even after defection.",
+        "--reward-window",
+        type=int,
+        default=10,
+        help="Only keep the last N round payoffs in the cumulative episode return.",
     )
     parser.add_argument("--framework", type=str, default="torch", choices=["torch", "tf2"])
     parser.add_argument("--lr", type=float, default=5e-4)
@@ -194,14 +247,14 @@ def main():
     args = parse_args()
     env_config = {
         "max_rounds": args.max_rounds,
-        "terminate_on_defection": args.terminate_on_defection,
+        "reward_window": args.reward_window,
     }
 
     ray.init(ignore_reinit_error=True, include_dashboard=False)
     register_env(ENV_NAME, env_creator)
 
     if args.from_checkpoint:
-        algo = Algorithm.from_checkpoint(args.from_checkpoint)
+        algo = Algorithm.from_checkpoint(_resolve_checkpoint_path(args.from_checkpoint))
     else:
         algo = build_algorithm(args)
         for i in range(1, args.train_iters + 1):
@@ -213,7 +266,8 @@ def main():
                     f"timesteps_total={result.get('timesteps_total', 'n/a')}"
                 )
 
-        checkpoint_path = checkpoint_to_path(algo.save(args.checkpoint_dir))
+        checkpoint_dir = _resolve_checkpoint_path(args.checkpoint_dir)
+        checkpoint_path = checkpoint_to_path(algo.save(checkpoint_dir))
         print(f"[train] checkpoint saved to: {checkpoint_path}")
 
     if args.eval_episodes > 0:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from typing import Dict, Tuple
 
 import numpy as np
@@ -31,8 +32,9 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
     Rules:
     - Player 1 acts first, then Player 2 acts.
     - A payoff is assigned after both actions in the round are known.
-    - If `terminate_on_defection` is True, the episode ends after the round
-      where at least one player defects.
+    - Episode length is fixed: it always runs for `max_rounds`.
+    - If `reward_window` is set (>0), the episode return tracks only the most
+      recent N round payoffs via delta rewards.
     """
 
     def __init__(self, config=None):
@@ -42,16 +44,29 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
         self.max_rounds = int(config.get("max_rounds", 50))
         if self.max_rounds <= 0:
             raise ValueError("max_rounds must be > 0")
-        self.terminate_on_defection = bool(config.get("terminate_on_defection", True))
+        reward_window = int(config.get("reward_window", 10))
+        if reward_window <= 0:
+            raise ValueError("reward_window must be > 0")
+        self.reward_window = reward_window
 
         # Observation = [last_own_action, last_opponent_action, round_progress]
         # last actions use -1.0 before first complete round.
-        self.observation_space = Box(
+        shared_observation_space = Box(
             low=np.array([-1.0, -1.0, 0.0], dtype=np.float32),
             high=np.array([1.0, 1.0, 1.0], dtype=np.float32),
             dtype=np.float32,
         )
-        self.action_space = Discrete(2)  # 0=cooperate, 1=defect
+        shared_action_space = Discrete(2)  # 0=cooperate, 1=defect
+
+        # Preferred by RLlib's new API stack: per-agent space dicts.
+        self.observation_spaces = {
+            agent_id: shared_observation_space for agent_id in AGENT_IDS
+        }
+        self.action_spaces = {agent_id: shared_action_space for agent_id in AGENT_IDS}
+
+        # Keep shared fields for compatibility with old stack code paths.
+        self.observation_space = shared_observation_space
+        self.action_space = shared_action_space
 
         self.possible_agents = list(AGENT_IDS)
         self.agents = list(AGENT_IDS)
@@ -61,6 +76,9 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
         self._last_joint_actions = (-1, -1)
         self.rounds_completed = 0
         self._episode_done = False
+        self._recent_round_rewards = {
+            agent_id: deque(maxlen=self.reward_window) for agent_id in AGENT_IDS
+        }
 
     def reset(self, *, seed=None, options=None):
         if seed is not None:
@@ -71,6 +89,8 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
         self._last_joint_actions = (-1, -1)
         self.rounds_completed = 0
         self._episode_done = False
+        for history in self._recent_round_rewards.values():
+            history.clear()
 
         obs = {self._next_player: self._build_obs(self._next_player)}
         infos = {self._next_player: {"round": 1}}
@@ -102,22 +122,27 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
         # Phase 2: Player 2 acts, round is complete, compute payoff.
         player_1_action = int(self._pending_action_player_1)
         player_2_action = action
-        reward_player_1, reward_player_2 = PAYOFF_MATRIX[(player_1_action, player_2_action)]
+        base_reward_player_1, base_reward_player_2 = PAYOFF_MATRIX[
+            (player_1_action, player_2_action)
+        ]
+        reward_player_1 = self._windowed_reward(AGENT_IDS[0], base_reward_player_1)
+        reward_player_2 = self._windowed_reward(AGENT_IDS[1], base_reward_player_2)
 
         self.rounds_completed += 1
         self._last_joint_actions = (player_1_action, player_2_action)
         self._pending_action_player_1 = None
 
-        defection_happened = (player_1_action == DEFECT) or (player_2_action == DEFECT)
-        terminated_all = self.terminate_on_defection and defection_happened
-        truncated_all = (self.rounds_completed >= self.max_rounds) and not terminated_all
+        terminated_all = self.rounds_completed >= self.max_rounds
+        truncated_all = False
 
         self._episode_done = terminated_all or truncated_all
         self._next_player = AGENT_IDS[0]
 
         if self._episode_done:
-            obs = {}
-            infos = {}
+            # RLlib's new API stack expects final observations for ended agents,
+            # especially for truncation value-bootstrapping.
+            obs = {agent_id: self._build_obs(agent_id) for agent_id in AGENT_IDS}
+            infos = {agent_id: {"round": self.rounds_completed} for agent_id in AGENT_IDS}
         else:
             obs = {self._next_player: self._build_obs(self._next_player)}
             infos = {self._next_player: {"round": self.rounds_completed + 1}}
@@ -142,3 +167,10 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
             opp_last, own_last = self._last_joint_actions
         round_progress = float(self.rounds_completed) / float(self.max_rounds)
         return np.array([float(own_last), float(opp_last), round_progress], dtype=np.float32)
+
+    def _windowed_reward(self, agent_id: str, round_reward: float) -> float:
+        """Return a reward delta so episode return equals sum of last N payoffs."""
+        history = self._recent_round_rewards[agent_id]
+        dropped = history[0] if len(history) == self.reward_window else 0.0
+        history.append(float(round_reward))
+        return float(round_reward) - float(dropped)
