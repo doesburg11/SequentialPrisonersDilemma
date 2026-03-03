@@ -1,4 +1,4 @@
-# Sequential Iterated Prisoner's Dilemma (RLlib)
+# Sequential Iterated Prisoner's Dilemma
 
 ## Overview
 
@@ -64,7 +64,7 @@ Recommended reporting:
 - Rapoport submitted Tit-for-Tat, and it ranked first in both tournaments.
 - Axelrod's 1984 book *The Evolution of Cooperation* made these results widely known and influential.
 
-## Training and Evaluation (RLlib 2.54.0)
+## Tuning and Evaluation (RLlib 2.54.0)
 
 Install dependencies:
 
@@ -72,30 +72,41 @@ Install dependencies:
 python -m pip install -r requirements.txt
 ```
 
-Train with two independent policies and evaluate:
+PPO hyperparameters are defined in:
+
+- `config/config_ppo.py` (`config_ppo` dict)
+- Runtime/environment settings are defined in `config/config_env.py` (`config_env` dict)
+
+Tune/eval will load both files by default, so you can configure everything in one place.
+This includes new-stack resource settings such as:
+`num_learners`, `num_gpus_per_learner`, `num_env_runners`, `num_envs_per_env_runner`,
+`num_cpus_per_env_runner`, and `num_cpus_for_main_process`.
+Core new-stack PPO keys follow PredPreyGrass naming, e.g.
+`train_batch_size_per_learner`, `minibatch_size`, `num_epochs`, `rollout_fragment_length`.
+Set `tune_iters` in this same config file to control total Tune iterations.
+Legacy aliases are intentionally not supported anymore.
+
+Tune with two independent policies and evaluate:
 
 ```bash
-python scripts/train_eval_rllib.py --train-iters 50 --eval-episodes 20
+python scripts/tune_eval_rllib.py
 ```
 
 Evaluate only from a saved checkpoint:
 
-```bash
-python scripts/train_eval_rllib.py --from-checkpoint checkpoints/sequential_pd_ppo --eval-episodes 50
-```
+- Set `from_checkpoint` in `config/config_env.py` to your checkpoint path.
+
+Use a different PPO hyperparameter file:
+
+- Set `ppo_config` in `config/config_env.py`.
+
+Write machine-readable metrics for plotting or post-analysis:
+
+- Set `metrics_out` in `config/config_env.py`.
 
 Useful options:
 
-```bash
-# Adjust episode length
-python scripts/train_eval_rllib.py --max-rounds 100
-
-# Random horizon (revealed at episode start): sample T in [10, 50]
-python scripts/train_eval_rllib.py --horizon-mode random_revealed --min-rounds 10 --max-rounds 50
-
-# Random continuation (unknown final round): continue each round with prob 0.95
-python scripts/train_eval_rllib.py --horizon-mode random_continuation --min-rounds 1 --max-rounds 100 --continuation-prob 0.95
-```
+- Adjust `max_rounds`, `min_rounds`, `horizon_mode`, and `continuation_prob` in `config/config_env.py`.
 
 ## Experiment: Fixed Horizon (50 Rounds)
 
@@ -104,11 +115,7 @@ Goal:
 - Test whether the finite-horizon setup converges to all-defect behavior.
 
 ```bash
-python scripts/train_eval_rllib.py \
-  --train-iters 50 \
-  --eval-episodes 20 \
-  --horizon-mode fixed \
-  --max-rounds 50
+python scripts/tune_eval_rllib.py
 ```
 
 Observed eval summary:
@@ -121,3 +128,111 @@ Interpretation:
 
 - This matches all-defect over 50 rounds: each round yields `(D,D) -> (1,1)`, totaling `50` per agent.
 - This is the expected finite-horizon baseline in the standard window-less setup.
+
+## Robust Tuning and Stability Checks
+
+Single-run results can look good while still being unstable across random seeds. Use a multi-seed sweep to
+check whether behavior is actually robust.
+
+Recommended robust baseline:
+
+- Increase `tune_iters` in `config/config_ppo.py` (for example, `100` to `300`)
+- Set robust PPO defaults in `config/config_ppo.py`
+- Evaluate with enough episodes (`eval_episodes` in `config/config_env.py`)
+- Report aggregate stats over multiple seeds
+
+Run a stability sweep:
+
+```bash
+python scripts/stability_sweep.py \
+  --num-seeds 8 \
+  --seed-start 0 \
+  --eval-episodes 100 \
+  --horizon-mode fixed \
+  --max-rounds 50
+```
+
+`stability_sweep.py` now also auto-scales PPO batch settings by `max_rounds`
+to keep update statistics more comparable across horizon choices:
+
+- `train_batch_size_per_learner = max(1024, 64 * (2 * max_rounds))`
+- `minibatch_size = max(128, train_batch_size_per_learner // 8)` (rounded to a multiple of 32)
+- `num_epochs = 15` for smaller batches, `10` when `train_batch_size_per_learner >= 8192`
+
+Each seed run gets its own generated `config_ppo.py` with these effective values.
+During stability sweeps, these three keys override the corresponding values from the base
+`config/config_ppo.py` for fairness across horizons.
+
+To change PPO hyperparameters/resources, edit `config/config_ppo.py` and rerun.
+
+If RLlib is installed in a project-local interpreter, set it explicitly:
+
+```bash
+python scripts/stability_sweep.py --python-executable ./.conda/bin/python
+```
+
+Output:
+
+- Per-seed artifacts in `checkpoints/stability_sweep/seed_<seed>/`
+- Per-seed generated PPO config in `checkpoints/stability_sweep/seed_<seed>/config_ppo_<timestamp>.py`
+- Per-seed generated env config in `checkpoints/stability_sweep/seed_<seed>/config_env_<timestamp>.py`
+- Per-seed metrics in `checkpoints/stability_sweep/seed_<seed>/metrics_<timestamp>.json`
+- Aggregate summary in `checkpoints/stability_sweep/summary_<timestamp>.json`
+- Automatic `STABLE`/`UNSTABLE` verdict based on:
+  - reward CV across seeds
+  - cooperation-rate std across seeds
+  - rounds-per-episode CV across seeds
+  - mean player reward gap
+
+## Sweep Max Rounds vs Cooperation
+
+Sweep these max-round values and plot both players' cooperation rates:
+
+`[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]`
+
+```bash
+python scripts/sweep_max_rounds_cooperation.py
+```
+
+Set sweep seed/CI controls in `config/config_env.py` under `config_sweep_max_rounds`:
+
+- `num_seeds`
+- `seed_start`
+- `ci_level`
+
+To keep PPO updates comparable across horizons, the sweep now auto-scales batch settings
+per `max_rounds` by generating a per-run `config_ppo.py`:
+
+- `train_batch_size_per_learner = max(1024, 64 * (2 * max_rounds))`
+- `minibatch_size = max(128, train_batch_size_per_learner // 8)` (rounded to a multiple of 32)
+- `num_epochs = 15` for smaller batches, `10` when `train_batch_size_per_learner >= 8192`
+
+This keeps the number of complete episodes per PPO update more stable as episode length grows.
+During this max-round sweep, these three keys override the corresponding values from the base
+`config/config_ppo.py`.
+For each `max_rounds`, the script now runs multiple seeds, computes mean cooperation per player,
+and plots confidence bands around each mean curve.
+
+Outputs:
+
+- Per-round runs in `checkpoints/max_rounds_cooperation_sweep/max_rounds_<value>/`
+- Per-round, per-seed generated PPO config in `checkpoints/max_rounds_cooperation_sweep/max_rounds_<value>/seed_<seed>/config_ppo_<timestamp>.py`
+- Per-round, per-seed generated env config in `checkpoints/max_rounds_cooperation_sweep/max_rounds_<value>/seed_<seed>/config_env_<timestamp>.py`
+- Per-round, per-seed metrics in `checkpoints/max_rounds_cooperation_sweep/max_rounds_<value>/seed_<seed>/metrics_<timestamp>.json`
+- Plot in `checkpoints/max_rounds_cooperation_sweep/cooperation_vs_max_rounds_<timestamp>.png`
+- Summary JSON in `checkpoints/max_rounds_cooperation_sweep/summary_<timestamp>.json`
+
+Example plot:
+
+<div align="center">
+  <img src="assets/cooperation_vs_max_rounds.png" alt="Sequential Iterated Prisoner's Dilemma cooperation chart" width="1000" />
+  <p><strong>Display 2: Mean cooperation rates of both players across the number of repeated prisoner's dilemma games, with confidence bands.</strong></p>
+</div>
+
+Why cooperation can still appear (even in finite horizon):
+
+- Backward induction is an equilibrium solution concept for fully rational players with exact reasoning; PPO self-play is approximate optimization and does not guarantee subgame-perfect equilibrium.
+- Both agents learn simultaneously against a moving opponent policy, so training can settle into cooperative conventions or other local fixed points.
+- Neural function approximation, entropy regularization, and finite training budgets can prevent clean unraveling to all-defect.
+- With finite samples and sometimes a single seed, measured cooperation can look noisy and persist at longer horizons.
+- This pattern does not invalidate theory; it shows the gap between game-theoretic predictions and practical multi-agent RL dynamics.
