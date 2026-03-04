@@ -17,7 +17,7 @@ config_env = {
     "seed": None,
 }
 
-# Sweep-only settings for scripts/sweep_max_rounds_cooperation.py.
+# Sweep-only settings for scripts/sweep_n_sequential_pd.py.
 # These are intentionally outside `config_env` to keep tune/eval runtime
 # parameters focused on training/evaluation and fixed-horizon env settings.
 config_sweep_max_rounds = {

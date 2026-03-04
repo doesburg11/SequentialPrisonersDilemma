@@ -26,7 +26,7 @@ DEFAULT_SWEEP_CONFIG = {
     "seed_start": 0,
     "ci_level": 0.95,
 }
-SWEEP_CONFIG_VAR = "config_sweep_max_rounds"
+SWEEP_CONFIG_VAR = "config_sweep_n_sequential_pd"
 
 
 def _resolve_existing_file(path: str) -> Path:
@@ -293,7 +293,7 @@ def parse_args():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="checkpoints/max_rounds_cooperation_sweep",
+        default="checkpoints/sweep_n_sequential_pd",
         help="Directory for per-round runs, summary JSON, and plot.",
     )
     parser.add_argument(
@@ -337,6 +337,8 @@ def main():
     python_exe = _python_executable(args.python_executable)
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    run_output_dir = output_dir / run_timestamp
+    run_output_dir.mkdir(parents=True, exist_ok=True)
 
     eval_episodes = int(base_env_config.get("eval_episodes", 0))
     if eval_episodes <= 0:
@@ -345,7 +347,7 @@ def main():
 
     results = []
     for max_rounds in rounds:
-        run_dir = output_dir / f"max_rounds_{max_rounds}"
+        run_dir = run_output_dir / f"max_rounds_{max_rounds}"
         run_dir.mkdir(parents=True, exist_ok=True)
         per_seed = []
         coop_values_p1: List[float] = []
@@ -424,7 +426,7 @@ def main():
             }
         )
 
-    plot_path = output_dir / f"cooperation_vs_max_rounds_{run_timestamp}.png"
+    plot_path = run_output_dir / f"cooperation_vs_max_rounds_{run_timestamp}.png"
     _plot_results(results, plot_path)
 
     summary = {
@@ -441,11 +443,11 @@ def main():
             "min_train_batch_size": MIN_TRAIN_BATCH_SIZE,
             "min_minibatch_size": MIN_MINIBATCH_SIZE,
         },
-        "output_dir": str(output_dir),
+        "output_dir": str(run_output_dir),
         "plot_path": str(plot_path),
         "results": results,
     }
-    summary_path = output_dir / f"summary_{run_timestamp}.json"
+    summary_path = run_output_dir / f"summary_{run_timestamp}.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     print(f"[sweep] wrote summary: {summary_path}")

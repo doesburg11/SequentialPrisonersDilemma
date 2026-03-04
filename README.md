@@ -180,7 +180,7 @@ Sweep these `n_sequential_games` values and plot both players' cooperation rates
 `[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]`
 
 ```bash
-python scripts/sweep_max_rounds_cooperation.py
+python scripts/sweep_n_sequential_pd.py
 ```
 
 Set sweep seed/CI controls in `config/config_env.py` under `config_sweep_max_rounds`:
@@ -204,17 +204,18 @@ and plots confidence bands around each mean curve.
 
 Outputs:
 
-- Per-round runs in `checkpoints/max_rounds_cooperation_sweep/max_rounds_<value>/`
-- Per-round, per-seed generated PPO config in `checkpoints/max_rounds_cooperation_sweep/max_rounds_<value>/seed_<seed>/config_ppo_<timestamp>.py`
-- Per-round, per-seed generated env config in `checkpoints/max_rounds_cooperation_sweep/max_rounds_<value>/seed_<seed>/config_env_<timestamp>.py`
-- Per-round, per-seed metrics in `checkpoints/max_rounds_cooperation_sweep/max_rounds_<value>/seed_<seed>/metrics_<timestamp>.json`
-- Plot in `checkpoints/max_rounds_cooperation_sweep/cooperation_vs_max_rounds_<timestamp>.png`
-- Summary JSON in `checkpoints/max_rounds_cooperation_sweep/summary_<timestamp>.json`
+- Per-sweep run root in `checkpoints/sweep_n_sequential_pd/<run_timestamp>/`
+- Per-round runs in `checkpoints/sweep_n_sequential_pd/<run_timestamp>/max_rounds_<value>/`
+- Per-round, per-seed generated PPO config in `checkpoints/sweep_n_sequential_pd/<run_timestamp>/max_rounds_<value>/seed_<seed>/config_ppo_<run_timestamp>.py`
+- Per-round, per-seed generated env config in `checkpoints/sweep_n_sequential_pd/<run_timestamp>/max_rounds_<value>/seed_<seed>/config_env_<run_timestamp>.py`
+- Per-round, per-seed metrics in `checkpoints/sweep_n_sequential_pd/<run_timestamp>/max_rounds_<value>/seed_<seed>/metrics_<run_timestamp>.json`
+- Plot in `checkpoints/sweep_n_sequential_pd/<run_timestamp>/cooperation_vs_max_rounds_<run_timestamp>.png`
+- Summary JSON in `checkpoints/sweep_n_sequential_pd/<run_timestamp>/summary_<run_timestamp>.json`
 
 Result incorporated here:
 
-- Plot file: `checkpoints/max_rounds_cooperation_sweep/cooperation_vs_max_rounds_20260303_130810_199804.png`
-- Summary file: `checkpoints/max_rounds_cooperation_sweep/summary_20260303_130810_199804.json`
+- Plot file: `checkpoints/sweep_n_sequential_pd/20260303_130810_199804/cooperation_vs_max_rounds_20260303_130810_199804.png`
+- Summary file: `checkpoints/sweep_n_sequential_pd/20260303_130810_199804/summary_20260303_130810_199804.json`
 - Seeds: `[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]` (10 runs per `n_sequential_games` value)
 - Confidence level: `95%`
 
@@ -258,5 +259,5 @@ How the sweep mechanism works end-to-end:
    - confidence interval (normal approximation)
 7. Plot mean lines plus confidence bands for both players.
 8. Write timestamped aggregate outputs:
-   - `cooperation_vs_max_rounds_<timestamp>.png`
-   - `summary_<timestamp>.json`
+   - `checkpoints/sweep_n_sequential_pd/<run_timestamp>/cooperation_vs_max_rounds_<run_timestamp>.png`
+   - `checkpoints/sweep_n_sequential_pd/<run_timestamp>/summary_<run_timestamp>.json`
