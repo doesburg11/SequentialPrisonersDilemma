@@ -31,35 +31,16 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
     Rules:
     - Both players choose actions each round.
     - A payoff is assigned from the joint action in that round.
-    - Horizon mode can be one of:
-      - `fixed`: always run exactly `max_rounds`.
-      - `random_revealed`: sample episode horizon in [min_rounds, max_rounds].
-      - `random_continuation`: after each round (after `min_rounds`), continue with
-        probability `continuation_prob`; stop otherwise.
+    - Episodes always run for a fixed horizon of `n_sequential_games`.
     """
 
     def __init__(self, config=None):
         super().__init__()
         config = config or {}
 
-        self.max_rounds = int(config.get("max_rounds", 50))
-        if self.max_rounds <= 0:
-            raise ValueError("max_rounds must be > 0")
-        self.min_rounds = int(config.get("min_rounds", self.max_rounds))
-        if self.min_rounds <= 0:
-            raise ValueError("min_rounds must be > 0")
-        if self.min_rounds > self.max_rounds:
-            raise ValueError("min_rounds must be <= max_rounds")
-        self.horizon_mode = str(config.get("horizon_mode", "fixed"))
-        valid_horizon_modes = {"fixed", "random_revealed", "random_continuation"}
-        if self.horizon_mode not in valid_horizon_modes:
-            raise ValueError(
-                f"horizon_mode must be one of {sorted(valid_horizon_modes)}; "
-                f"got {self.horizon_mode!r}"
-            )
-        self.continuation_prob = float(config.get("continuation_prob", 0.95))
-        if not 0.0 <= self.continuation_prob <= 1.0:
-            raise ValueError("continuation_prob must be in [0.0, 1.0]")
+        self.n_sequential_games = int(config.get("n_sequential_games", 50))
+        if self.n_sequential_games <= 0:
+            raise ValueError("n_sequential_games must be > 0")
 
         # Observation = [last_own_action, last_opponent_action, round_progress]
         # last actions use -1.0 before first complete round.
@@ -86,7 +67,7 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
         self._last_joint_actions = (-1, -1)
         self.rounds_completed = 0
         self._episode_done = False
-        self._episode_horizon = self.max_rounds
+        self._episode_horizon = self.n_sequential_games
 
     def reset(self, *, seed=None, options=None):
         if seed is not None:
@@ -95,14 +76,13 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
         self._last_joint_actions = (-1, -1)
         self.rounds_completed = 0
         self._episode_done = False
-        self._episode_horizon = self._sample_episode_horizon()
+        self._episode_horizon = self.n_sequential_games
 
         obs = {agent_id: self._build_obs(agent_id) for agent_id in AGENT_IDS}
         infos = {
             agent_id: {
                 "round": 1,
                 "episode_horizon": self._episode_horizon,
-                "horizon_mode": self.horizon_mode,
             }
             for agent_id in AGENT_IDS
         }
@@ -145,7 +125,6 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
             agent_id: {
                 "round": next_round,
                 "episode_horizon": self._episode_horizon,
-                "horizon_mode": self.horizon_mode,
             }
             for agent_id in AGENT_IDS
         }
@@ -171,22 +150,5 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
         round_progress = float(self.rounds_completed) / float(self._episode_horizon)
         return np.array([float(own_last), float(opp_last), round_progress], dtype=np.float32)
 
-    def _sample_episode_horizon(self) -> int:
-        if self.horizon_mode == "fixed":
-            return self.max_rounds
-        if self.horizon_mode == "random_revealed":
-            # np.random.randint upper bound is exclusive.
-            return int(np.random.randint(self.min_rounds, self.max_rounds + 1))
-        # random_continuation keeps max_rounds as a hard cap, but the actual
-        # stop round is stochastic and not known in advance.
-        return self.max_rounds
-
     def _should_terminate_episode(self) -> bool:
-        if self.rounds_completed >= self.max_rounds:
-            return True
-        if self.horizon_mode in ("fixed", "random_revealed"):
-            return self.rounds_completed >= self._episode_horizon
-        # random_continuation
-        if self.rounds_completed < self.min_rounds:
-            return False
-        return np.random.random() >= self.continuation_prob
+        return self.rounds_completed >= self._episode_horizon

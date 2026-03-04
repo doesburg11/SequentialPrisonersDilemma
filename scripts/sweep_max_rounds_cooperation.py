@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sweep max_rounds values and plot cooperation rates for both players."""
+"""Sweep n_sequential_games values and plot cooperation rates for both players."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import argparse
 import importlib.util
 import json
 import math
-import os
 import statistics
 import subprocess
 import sys
@@ -16,7 +15,6 @@ from pathlib import Path
 from typing import Dict, List
 
 
-ENV_CONFIG_ENVVAR = "SEQUENTIAL_PD_ENV_CONFIG"
 DEFAULT_ENV_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "config_env.py"
 DEFAULT_ROUNDS = [ 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100 ]
 TARGET_EPISODES_PER_UPDATE = 64
@@ -101,6 +99,14 @@ def _write_config_env(path: Path, config_env: Dict) -> None:
 
 def _write_config_ppo(path: Path, config_ppo: Dict) -> None:
     path.write_text(f"config_ppo = {repr(config_ppo)}\n", encoding="utf-8")
+
+
+def _build_tune_command(python_exe: str, env_config_path: str) -> List[str]:
+    runner = (
+        "from scripts.tune_eval_rllib import main\n"
+        f"main(config_env_path={env_config_path!r})\n"
+    )
+    return [python_exe, "-c", runner]
 
 
 def _parse_rounds(values: str) -> List[int]:
@@ -294,10 +300,7 @@ def parse_args():
         "--env-config",
         type=str,
         default=None,
-        help=(
-            "Base config_env file path. Defaults to SEQUENTIAL_PD_ENV_CONFIG when set, "
-            "else config/config_env.py."
-        ),
+        help="Base config_env file path. Defaults to config/config_env.py.",
     )
     parser.add_argument(
         "--python-executable",
@@ -316,8 +319,6 @@ def main():
 
     if args.env_config is not None:
         env_config_path = args.env_config
-    elif os.environ.get(ENV_CONFIG_ENVVAR):
-        env_config_path = os.environ[ENV_CONFIG_ENVVAR]
     else:
         env_config_path = str(DEFAULT_ENV_CONFIG_PATH)
 
@@ -365,8 +366,7 @@ def main():
             _write_config_ppo(ppo_config_run_path, config_ppo)
 
             config_env["ppo_config"] = str(ppo_config_run_path)
-            config_env["max_rounds"] = int(max_rounds)
-            config_env["min_rounds"] = min(int(config_env["min_rounds"]), int(max_rounds))
+            config_env["n_sequential_games"] = int(max_rounds)
             config_env["seed"] = int(seed)
             config_env["checkpoint_dir"] = str(checkpoint_dir)
             config_env["metrics_out"] = str(metrics_path)
@@ -374,12 +374,10 @@ def main():
 
             _write_config_env(env_config_run_path, config_env)
 
-            env = os.environ.copy()
-            env[ENV_CONFIG_ENVVAR] = str(env_config_run_path)
-            cmd = [python_exe, "scripts/tune_eval_rllib.py"]
+            cmd = _build_tune_command(python_exe, str(env_config_run_path))
 
             print(f"[sweep] running max_rounds={max_rounds} seed={seed}")
-            subprocess.run(cmd, check=True, env=env)
+            subprocess.run(cmd, check=True)
 
             run_metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
             eval_summary = run_metrics.get("eval_summary") or {}

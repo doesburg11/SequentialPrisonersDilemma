@@ -12,17 +12,14 @@ config_env = {
     # Evaluation
     "eval_episodes": 20,
     # Environment horizon
-    "max_rounds": 100,
-    "min_rounds": 5,
-    "horizon_mode": "random_continuation",  # fixed | random_revealed | random_continuation
-    "continuation_prob": 0.98,
+    "n_sequential_games": 100,
     # Reproducibility
     "seed": None,
 }
 
 # Sweep-only settings for scripts/sweep_max_rounds_cooperation.py.
-# These are intentionally outside `config_env` so tune_eval_rllib.py
-# strict key validation remains unchanged.
+# These are intentionally outside `config_env` to keep tune/eval runtime
+# parameters focused on training/evaluation and fixed-horizon env settings.
 config_sweep_max_rounds = {
     "num_seeds": 10,
     "seed_start": 0,

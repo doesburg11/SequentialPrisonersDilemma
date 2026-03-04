@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project studies a repeated Prisoner's Dilemma with two independent learning agents using RLlib 2.54.0. Policies are learned via self-play.
+This project studies a repeated Prisoner's Dilemma with two independent reinforcement learning agents. The algorithm used is PPO via RLlib 2.54.0. 
 
 ## Environment and MARL Setup
 
@@ -15,7 +15,6 @@ This project studies a repeated Prisoner's Dilemma with two independent learning
   - `(D, C) -> (5, 0)`
   - `(D, D) -> (1, 1)`
 - Actions are chosen simultaneously each round (both actions provided in one env step)
-- Horizon modes: `fixed`, `random_revealed`, `random_continuation`
 - Two independent RLlib policies are trained:
   - `policy_player_1` for `player_1`
   - `policy_player_2` for `player_2`
@@ -27,11 +26,9 @@ This project studies a repeated Prisoner's Dilemma with two independent learning
   <p><strong>Display 1: The reward after each round.</strong></p>
 </div>
 
-Each episode is a repeated game with one of three horizon regimes:
+Each episode is a repeated game with a fixed horizon:
 
-1. `fixed`: always run exactly `max_rounds`.
-2. `random_revealed`: sample episode horizon in `[min_rounds, max_rounds]` and reveal it via observation progress/info.
-3. `random_continuation`: after each round (after `min_rounds`), continue with probability `continuation_prob`; stop otherwise.
+1. `fixed`: always run exactly `n_sequential_games`.
 
 ## Research Question and Hypotheses
 
@@ -54,7 +51,7 @@ Recommended reporting:
 
 - Defection/cooperation rate by round index `t`
 - Mean episode return
-- Mean rounds (fixed at `max_rounds` by design)
+- Mean rounds (fixed at `n_sequential_games` by design)
 - Multiple random seeds (to detect equilibrium-selection effects)
 
 ## Tuning and Evaluation (RLlib 2.54.0)
@@ -99,7 +96,7 @@ Write machine-readable metrics for plotting or post-analysis:
 
 Useful options:
 
-- Adjust `max_rounds`, `min_rounds`, `horizon_mode`, and `continuation_prob` in `config/config_env.py`.
+- Adjust `n_sequential_games` in `config/config_env.py`.
 
 ## Experiment: Fixed Horizon (50 Rounds)
 
@@ -141,20 +138,19 @@ python scripts/stability_sweep.py \
   --num-seeds 8 \
   --seed-start 0 \
   --eval-episodes 100 \
-  --horizon-mode fixed \
-  --max-rounds 50
+  --n-sequential-games 50
 ```
 
-`stability_sweep.py` now also auto-scales PPO batch settings by `max_rounds`
-to keep update statistics more comparable across horizon choices:
+`stability_sweep.py` now also auto-scales PPO batch settings by `n_sequential_games`
+to keep update statistics more comparable across round-length settings:
 
-- `train_batch_size_per_learner = max(1024, 64 * max_rounds)`
+- `train_batch_size_per_learner = max(1024, 64 * n_sequential_games)`
 - `minibatch_size = max(128, train_batch_size_per_learner // 8)` (rounded to a multiple of 32)
 - `num_epochs = 15` for smaller batches, `10` when `train_batch_size_per_learner >= 8192`
 
 Each seed run gets its own generated `config_ppo.py` with these effective values.
 During stability sweeps, these three keys override the corresponding values from the base
-`config/config_ppo.py` for fairness across horizons.
+`config/config_ppo.py` for fairness across `n_sequential_games` settings.
 
 To change PPO hyperparameters/resources, edit `config/config_ppo.py` and rerun.
 
@@ -179,7 +175,7 @@ Output:
 
 ## Sweep Max Rounds vs Cooperation
 
-Sweep these max-round values and plot both players' cooperation rates:
+Sweep these `n_sequential_games` values and plot both players' cooperation rates:
 
 `[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]`
 
@@ -194,16 +190,16 @@ Set sweep seed/CI controls in `config/config_env.py` under `config_sweep_max_rou
 - `ci_level`
 
 To keep PPO updates comparable across horizons, the sweep now auto-scales batch settings
-per `max_rounds` by generating a per-run `config_ppo.py`:
+per `n_sequential_games` by generating a per-run `config_ppo.py`:
 
-- `train_batch_size_per_learner = max(1024, 64 * max_rounds)`
+- `train_batch_size_per_learner = max(1024, 64 * n_sequential_games)`
 - `minibatch_size = max(128, train_batch_size_per_learner // 8)` (rounded to a multiple of 32)
 - `num_epochs = 15` for smaller batches, `10` when `train_batch_size_per_learner >= 8192`
 
 This keeps the number of complete episodes per PPO update more stable as episode length grows.
 During this max-round sweep, these three keys override the corresponding values from the base
 `config/config_ppo.py`.
-For each `max_rounds`, the script now runs multiple seeds, computes mean cooperation per player,
+For each `n_sequential_games` value, the script now runs multiple seeds, computes mean cooperation per player,
 and plots confidence bands around each mean curve.
 
 Outputs:
@@ -219,7 +215,7 @@ Result incorporated here:
 
 - Plot file: `checkpoints/max_rounds_cooperation_sweep/cooperation_vs_max_rounds_20260303_130810_199804.png`
 - Summary file: `checkpoints/max_rounds_cooperation_sweep/summary_20260303_130810_199804.json`
-- Seeds: `[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]` (10 runs per `max_rounds`)
+- Seeds: `[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]` (10 runs per `n_sequential_games` value)
 - Confidence level: `95%`
 
 <div align="center">
@@ -229,11 +225,11 @@ Result incorporated here:
 
 Observed result (this run):
 
-- Cooperation is near zero across most horizons; both players are exactly at `0.0` for `max_rounds = 5, 10, 40, 90, 100` and close to zero at many other points.
+- Cooperation is near zero across most horizons; both players are exactly at `0.0` for `n_sequential_games = 5, 10, 40, 90, 100` and close to zero at many other points.
 - The largest local bumps are:
-  - `max_rounds=50`: `player_1 mean = 0.048` (`95% CI [-0.038, 0.134]`), `player_2 mean = 0.070` (`95% CI [-0.024, 0.164]`)
-  - `max_rounds=65`: `player_1 mean = 0.035` (`95% CI [0.000, 0.071]`), `player_2 mean = 0.114` (`95% CI [-0.031, 0.259]`)
-  - `max_rounds=25`: `player_1 mean = 0.036`, `player_2 mean = 0.028`
+  - `n_sequential_games=50`: `player_1 mean = 0.048` (`95% CI [-0.038, 0.134]`), `player_2 mean = 0.070` (`95% CI [-0.024, 0.164]`)
+  - `n_sequential_games=65`: `player_1 mean = 0.035` (`95% CI [0.000, 0.071]`), `player_2 mean = 0.114` (`95% CI [-0.031, 0.259]`)
+  - `n_sequential_games=25`: `player_1 mean = 0.036`, `player_2 mean = 0.028`
 - Only `3/20` round settings exceed a mean cooperation of `0.02` for each player.
 - Confidence intervals mostly include `0`, especially for player 2, indicating unstable and seed-sensitive cooperation effects.
 
@@ -246,17 +242,17 @@ Interpretation:
 How the sweep mechanism works end-to-end:
 
 1. Load base environment settings from `config_env` and sweep controls from `config_sweep_max_rounds` in `config/config_env.py`.
-2. Read the list of `max_rounds` values to evaluate.
-3. For each `max_rounds` and each seed (10 seeds in this run), generate timestamped per-seed files:
+2. Read the list of `n_sequential_games` values to evaluate.
+3. For each `n_sequential_games` value and each seed (10 seeds in this run), generate timestamped per-seed files:
    - `config_env_<timestamp>.py`
    - `config_ppo_<timestamp>.py`
    - `metrics_<timestamp>.json`
-4. Apply horizon-aware PPO scaling per `max_rounds`:
-   - `train_batch_size_per_learner = max(1024, 64 * max_rounds)`
+4. Apply max-round-aware PPO scaling per `n_sequential_games`:
+   - `train_batch_size_per_learner = max(1024, 64 * n_sequential_games)`
    - `minibatch_size = max(128, train_batch_size_per_learner // 8)` (rounded to multiple of 32)
    - `num_epochs = 15` or `10` for large batches
 5. Run `scripts/tune_eval_rllib.py` for each seed and collect cooperation metrics.
-6. Aggregate by `max_rounds`:
+6. Aggregate by `n_sequential_games`:
    - mean cooperation per player
    - standard deviation
    - confidence interval (normal approximation)

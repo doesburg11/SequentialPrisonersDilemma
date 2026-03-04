@@ -5,78 +5,30 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import random
 import sys
-from importlib import import_module
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import ray
+from envs.prisoners_dilemma_env import (
+    AGENT_IDS,
+    COOPERATE,
+    ENV_NAME,
+    SequentialPrisonersDilemmaEnv,
+)
+from ray import tune
 from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.algorithms.ppo import PPO, PPOConfig
 from ray.rllib.core import Columns
-from ray import tune
-from ray.tune.registry import register_env
 from ray.rllib.utils.framework import try_import_torch
-
-# Resolve env imports for both:
-# - `python scripts/tune_eval_rllib.py` (script dir on sys.path)
-# - `python -m scripts.tune_eval_rllib` (project root on sys.path)
-try:
-    _env_module = import_module("envs.prisoners_dilemma_env")
-except ModuleNotFoundError:
-    project_root = Path(__file__).resolve().parents[1]
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-    _env_module = import_module("envs.prisoners_dilemma_env")
-
-AGENT_IDS = _env_module.AGENT_IDS
-COOPERATE = _env_module.COOPERATE
-ENV_NAME = _env_module.ENV_NAME
-SequentialPrisonersDilemmaEnv = _env_module.SequentialPrisonersDilemmaEnv
+from ray.tune.registry import register_env
 
 torch, _ = try_import_torch()
-DEFAULT_ENV_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "config_env.py"
-ENV_CONFIG_ENVVAR = "SEQUENTIAL_PD_ENV_CONFIG"
-ENV_CONFIG_KEYS = {
-    "ppo_config",
-    "eval_episodes",
-    "max_rounds",
-    "min_rounds",
-    "horizon_mode",
-    "continuation_prob",
-    "seed",
-    "checkpoint_dir",
-    "from_checkpoint",
-    "metrics_out",
-}
-HORIZON_MODE_CHOICES = {"fixed", "random_revealed", "random_continuation"}
-TRAINING_CONFIG_KEYS = {
-    "lr",
-    "gamma",
-    "lambda_",
-    "train_batch_size_per_learner",
-    "minibatch_size",
-    "num_epochs",
-    "entropy_coeff",
-    "vf_loss_coeff",
-    "clip_param",
-    "kl_coeff",
-    "kl_target",
-    "grad_clip",
-}
-LEARNER_CONFIG_KEYS = {"num_learners", "num_gpus_per_learner"}
-ENV_RUNNER_CONFIG_KEYS = {
-    "num_env_runners",
-    "num_envs_per_env_runner",
-    "rollout_fragment_length",
-    "sample_timeout_s",
-    "num_cpus_per_env_runner",
-}
-RESOURCE_CONFIG_KEYS = {"num_cpus_for_main_process"}
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_ENV_CONFIG_PATH = PROJECT_ROOT / "config" / "config_env.py"
 
 
 def env_creator(env_config):
@@ -87,23 +39,15 @@ def policy_mapping_fn(agent_id, *args, **kwargs):
     return f"policy_{agent_id}"
 
 
-def _resolve_existing_file(path: str) -> Path:
+def _resolve_project_file(path: str) -> Path:
     candidate = Path(path).expanduser()
     if candidate.is_absolute():
         return candidate.resolve()
-
-    project_root = Path(__file__).resolve().parents[1]
-    script_dir = Path(__file__).resolve().parent
-    search_roots = [Path.cwd(), project_root, script_dir]
-    for root in search_roots:
-        resolved = (root / candidate).resolve()
-        if resolved.exists():
-            return resolved
-    return (Path.cwd() / candidate).resolve()
+    return (PROJECT_ROOT / candidate).resolve()
 
 
 def load_ppo_config(path: str) -> tuple[Dict[str, Any], str]:
-    resolved_path = _resolve_existing_file(path)
+    resolved_path = _resolve_project_file(path)
     if not resolved_path.exists():
         raise FileNotFoundError(f"PPO config file not found: {resolved_path}")
 
@@ -126,15 +70,8 @@ def load_ppo_config(path: str) -> tuple[Dict[str, Any], str]:
     return dict(config_ppo), str(resolved_path)
 
 
-def _resolve_env_config_path() -> Path:
-    env_override = os.environ.get(ENV_CONFIG_ENVVAR)
-    if env_override:
-        return _resolve_existing_file(env_override)
-    return DEFAULT_ENV_CONFIG_PATH.resolve()
-
-
 def load_env_config(path: str) -> tuple[Dict[str, Any], str]:
-    resolved_path = _resolve_existing_file(path)
+    resolved_path = _resolve_project_file(path)
     if not resolved_path.exists():
         raise FileNotFoundError(f"Environment config file not found: {resolved_path}")
 
@@ -157,38 +94,28 @@ def load_env_config(path: str) -> tuple[Dict[str, Any], str]:
     return dict(config_env), str(resolved_path)
 
 
-def resolve_run_config() -> tuple[SimpleNamespace, str]:
-    env_config_path = _resolve_env_config_path()
+def resolve_run_config(config_env_path: Optional[str] = None) -> tuple[SimpleNamespace, str]:
+    if config_env_path is None:
+        env_config_path = DEFAULT_ENV_CONFIG_PATH.resolve()
+    else:
+        env_config_path = _resolve_project_file(config_env_path)
     raw_config_env, resolved_path = load_env_config(str(env_config_path))
-
-    unknown_keys = sorted(set(raw_config_env.keys()) - ENV_CONFIG_KEYS)
-    if unknown_keys:
-        raise ValueError(f"Unknown keys in `config_env`: {unknown_keys}")
-    missing_keys = sorted(ENV_CONFIG_KEYS - set(raw_config_env.keys()))
-    if missing_keys:
-        raise ValueError(f"Missing required keys in `config_env`: {missing_keys}")
 
     config_env = dict(raw_config_env)
 
-    config_env["ppo_config"] = str(config_env["ppo_config"])
-    config_env["eval_episodes"] = int(config_env["eval_episodes"])
-    config_env["max_rounds"] = int(config_env["max_rounds"])
-    config_env["min_rounds"] = int(config_env["min_rounds"])
-    config_env["horizon_mode"] = str(config_env["horizon_mode"])
-    config_env["continuation_prob"] = float(config_env["continuation_prob"])
-    config_env["checkpoint_dir"] = str(config_env["checkpoint_dir"])
+    try:
+        config_env["ppo_config"] = str(config_env["ppo_config"])
+        config_env["eval_episodes"] = int(config_env["eval_episodes"])
+        config_env["n_sequential_games"] = int(config_env["n_sequential_games"])
+        config_env["checkpoint_dir"] = str(config_env["checkpoint_dir"])
+    except KeyError as exc:
+        missing_key = exc.args[0]
+        raise ValueError(f"Missing required key in `config_env`: {missing_key!r}") from exc
 
-    if config_env["horizon_mode"] not in HORIZON_MODE_CHOICES:
-        raise ValueError(
-            f"horizon_mode must be one of {sorted(HORIZON_MODE_CHOICES)}, "
-            f"got {config_env['horizon_mode']!r}"
-        )
     if config_env["eval_episodes"] < 0:
         raise ValueError("eval_episodes must be >= 0")
-    if config_env["max_rounds"] <= 0:
-        raise ValueError("max_rounds must be > 0")
-    if config_env["min_rounds"] <= 0:
-        raise ValueError("min_rounds must be > 0")
+    if config_env["n_sequential_games"] <= 0:
+        raise ValueError("n_sequential_games must be > 0")
 
     seed = config_env.get("seed")
     if seed is not None:
@@ -227,34 +154,6 @@ def _parse_rollout_fragment_length(value):
     )
 
 
-def split_ppo_config(
-    config_ppo: Dict[str, Any]
-) -> tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
-    training_config = {}
-    learner_config = {}
-    env_runner_config = {}
-    resource_config = {}
-    valid_keys = (
-        TRAINING_CONFIG_KEYS
-        | LEARNER_CONFIG_KEYS
-        | ENV_RUNNER_CONFIG_KEYS
-        | RESOURCE_CONFIG_KEYS
-    )
-    unknown_keys = sorted(set(config_ppo.keys()) - valid_keys)
-    if unknown_keys:
-        raise ValueError(f"Unknown keys in `config_ppo`: {unknown_keys}")
-    for key, value in config_ppo.items():
-        if key in TRAINING_CONFIG_KEYS:
-            training_config[key] = value
-        elif key in LEARNER_CONFIG_KEYS:
-            learner_config[key] = value
-        elif key in ENV_RUNNER_CONFIG_KEYS:
-            env_runner_config[key] = value
-        elif key in RESOURCE_CONFIG_KEYS:
-            resource_config[key] = value
-    return training_config, learner_config, env_runner_config, resource_config
-
-
 def resolve_ppo_config(
     ppo_config_path: str,
 ) -> tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], int, str]:
@@ -269,23 +168,36 @@ def resolve_ppo_config(
         config_ppo["rollout_fragment_length"] = _parse_rollout_fragment_length(
             config_ppo["rollout_fragment_length"]
         )
-    (
-        ppo_training_config,
-        learner_config,
-        env_runner_config,
-        resource_config,
-    ) = split_ppo_config(config_ppo)
 
-    learner_config.setdefault("num_learners", 1)
-    learner_config.setdefault("num_gpus_per_learner", 0.0)
+    required_ppo_keys = (
+        "num_learners",
+        "num_gpus_per_learner",
+        "num_env_runners",
+        "num_envs_per_env_runner",
+        "rollout_fragment_length",
+        "sample_timeout_s",
+        "num_cpus_per_env_runner",
+        "num_cpus_for_main_process",
+    )
+    missing_ppo_keys = sorted(key for key in required_ppo_keys if key not in config_ppo)
+    if missing_ppo_keys:
+        raise ValueError(f"Missing required keys in `config_ppo`: {missing_ppo_keys}")
 
-    env_runner_config.setdefault("num_env_runners", 0)
-    env_runner_config.setdefault("num_envs_per_env_runner", 1)
-    env_runner_config.setdefault("rollout_fragment_length", "auto")
-    env_runner_config.setdefault("sample_timeout_s", 600.0)
-    env_runner_config.setdefault("num_cpus_per_env_runner", 1.0)
-
-    resource_config.setdefault("num_cpus_for_main_process", 1.0)
+    learner_config = {
+        "num_learners": config_ppo.pop("num_learners"),
+        "num_gpus_per_learner": config_ppo.pop("num_gpus_per_learner"),
+    }
+    env_runner_config = {
+        "num_env_runners": config_ppo.pop("num_env_runners"),
+        "num_envs_per_env_runner": config_ppo.pop("num_envs_per_env_runner"),
+        "rollout_fragment_length": config_ppo.pop("rollout_fragment_length"),
+        "sample_timeout_s": config_ppo.pop("sample_timeout_s"),
+        "num_cpus_per_env_runner": config_ppo.pop("num_cpus_per_env_runner"),
+    }
+    resource_config = {
+        "num_cpus_for_main_process": config_ppo.pop("num_cpus_for_main_process"),
+    }
+    ppo_training_config = dict(config_ppo)
 
     return (
         ppo_training_config,
@@ -359,10 +271,7 @@ def build_ppo_config(
     resource_config: Dict[str, Any],
 ) -> PPOConfig:
     env_config = {
-        "max_rounds": args.max_rounds,
-        "min_rounds": args.min_rounds,
-        "horizon_mode": args.horizon_mode,
-        "continuation_prob": args.continuation_prob,
+        "n_sequential_games": args.n_sequential_games,
     }
     register_env(ENV_NAME, env_creator)
 
@@ -491,7 +400,7 @@ def _extract_first_action(action_batch) -> int:
 def _resolve_checkpoint_path(path: str) -> str:
     if "://" in path:
         return path
-    return str(Path(path).expanduser().resolve())
+    return str(_resolve_project_file(path))
 
 
 def compute_eval_action(algo: Algorithm, policy_id: str, observation) -> int:
@@ -684,13 +593,10 @@ def write_metrics_json(
     return str(resolved_output_path)
 
 
-def main():
-    if len(sys.argv) > 1:
-        raise ValueError(
-            "CLI args are disabled. Edit config/config_env.py "
-            "or set SEQUENTIAL_PD_ENV_CONFIG to an alternate config file."
-        )
-    run_config, resolved_env_config_path = resolve_run_config()
+def main(config_env_path: Optional[str] = None):
+    if config_env_path is None and len(sys.argv) > 1:
+        raise ValueError("CLI args are disabled. Edit config/config_env.py.")
+    run_config, resolved_env_config_path = resolve_run_config(config_env_path=config_env_path)
     print(f"[config] loaded env config: {resolved_env_config_path}")
 
     if run_config.seed is not None:
@@ -698,13 +604,8 @@ def main():
         np.random.seed(run_config.seed)
         if torch is not None and hasattr(torch, "manual_seed"):
             torch.manual_seed(run_config.seed)
-    if run_config.min_rounds > run_config.max_rounds:
-        raise ValueError("min-rounds must be <= max-rounds")
     env_config = {
-        "max_rounds": run_config.max_rounds,
-        "min_rounds": run_config.min_rounds,
-        "horizon_mode": run_config.horizon_mode,
-        "continuation_prob": run_config.continuation_prob,
+        "n_sequential_games": run_config.n_sequential_games,
     }
 
     ray.init(ignore_reinit_error=True, include_dashboard=False)
@@ -739,7 +640,7 @@ def main():
             ppo_config_path=resolved_ppo_config_path,
         )
     else:
-        run_config.ppo_config = _resolve_existing_file(run_config.ppo_config).as_posix()
+        run_config.ppo_config = _resolve_project_file(run_config.ppo_config).as_posix()
         run_config.ppo_training_config = None
         run_config.ppo_learner_config = None
         run_config.ppo_env_runner_config = None

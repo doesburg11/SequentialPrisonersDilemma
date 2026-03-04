@@ -7,7 +7,6 @@ import argparse
 import importlib.util
 import json
 import math
-import os
 import statistics
 import subprocess
 import sys
@@ -16,7 +15,6 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 
-ENV_CONFIG_ENVVAR = "SEQUENTIAL_PD_ENV_CONFIG"
 TARGET_EPISODES_PER_UPDATE = 64
 MINIBATCH_DIVISOR = 8
 MIN_MINIBATCH_SIZE = 128
@@ -64,12 +62,15 @@ def _nested(source: Dict, *keys, default=None):
     return value
 
 
-def _build_tune_command(
-    args,
-) -> List[str]:
+def _build_tune_command(args, env_config_path: str) -> List[str]:
+    runner = (
+        "from scripts.tune_eval_rllib import main\n"
+        f"main(config_env_path={env_config_path!r})\n"
+    )
     return [
         args.python_executable,
-        "scripts/tune_eval_rllib.py",
+        "-c",
+        runner,
     ]
 
 
@@ -116,9 +117,9 @@ def _round_down_to_multiple(value: int, multiple: int) -> int:
     return max(multiple, (value // multiple) * multiple)
 
 
-def _scaled_ppo_batch_settings(max_rounds: int) -> Dict[str, int]:
+def _scaled_ppo_batch_settings(n_sequential_games: int) -> Dict[str, int]:
     # Simultaneous-action env emits roughly 1 transition per game round.
-    approx_episode_steps = int(max_rounds)
+    approx_episode_steps = int(n_sequential_games)
     train_batch_size = max(
         MIN_TRAIN_BATCH_SIZE, TARGET_EPISODES_PER_UPDATE * approx_episode_steps
     )
@@ -174,15 +175,7 @@ def parse_args():
 
     # Tuning args mirrored from tune_eval_rllib.py.
     parser.add_argument("--eval-episodes", type=int, default=100)
-    parser.add_argument("--max-rounds", type=int, default=50)
-    parser.add_argument("--min-rounds", type=int, default=1)
-    parser.add_argument(
-        "--horizon-mode",
-        type=str,
-        default="fixed",
-        choices=["fixed", "random_revealed", "random_continuation"],
-    )
-    parser.add_argument("--continuation-prob", type=float, default=0.95)
+    parser.add_argument("--n-sequential-games", type=int, default=50)
 
     # Stability thresholds.
     parser.add_argument(
@@ -216,8 +209,8 @@ def main():
     args = parse_args()
     if args.num_seeds <= 0:
         raise ValueError("num-seeds must be > 0")
-    if args.max_rounds <= 0:
-        raise ValueError("max-rounds must be > 0")
+    if args.n_sequential_games <= 0:
+        raise ValueError("n-sequential-games must be > 0")
 
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -232,7 +225,7 @@ def main():
     seeds = list(range(args.seed_start, args.seed_start + args.num_seeds))
     run_timestamp = _timestamp_token()
     base_ppo_config, resolved_ppo_config_path = _load_ppo_config(args.ppo_config)
-    scaled_settings = _scaled_ppo_batch_settings(args.max_rounds)
+    scaled_settings = _scaled_ppo_batch_settings(args.n_sequential_games)
 
     for seed in seeds:
         seed_dir = output_dir / f"seed_{seed}"
@@ -249,10 +242,7 @@ def main():
         config_env = {
             "ppo_config": str(ppo_config_path),
             "eval_episodes": args.eval_episodes,
-            "max_rounds": args.max_rounds,
-            "min_rounds": args.min_rounds,
-            "horizon_mode": args.horizon_mode,
-            "continuation_prob": args.continuation_prob,
+            "n_sequential_games": args.n_sequential_games,
             "seed": seed,
             "checkpoint_dir": str(checkpoint_dir),
             "from_checkpoint": None,
@@ -260,11 +250,9 @@ def main():
         }
         _write_env_config(env_config_path, config_env)
 
-        cmd = _build_tune_command(args)
-        env = os.environ.copy()
-        env[ENV_CONFIG_ENVVAR] = str(env_config_path)
+        cmd = _build_tune_command(args, str(env_config_path))
         print(f"[sweep] running seed={seed}")
-        subprocess.run(cmd, check=True, env=env)
+        subprocess.run(cmd, check=True)
 
         run_metrics = json.loads(metrics_out.read_text(encoding="utf-8"))
         eval_summary = run_metrics.get("eval_summary") or {}
