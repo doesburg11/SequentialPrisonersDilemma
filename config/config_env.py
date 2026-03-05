@@ -10,7 +10,7 @@ config_env = {
     "from_checkpoint": None,
     "metrics_out": None,
     # Evaluation
-    "eval_episodes": 20,
+    "eval_episodes": 100,
     # Environment horizon
     "n_sequential_games": 100,
     # Reproducibility
@@ -43,7 +43,7 @@ config_sweep_n_sequential_pd = {
     ],
     "output_dir": "checkpoints/sweep_n_sequential_pd",
     "python_executable": None,
-    "num_seeds": 10,
+    "num_seeds": 20,
     "seed_start": 0,
     "ci_level": 0.95,
 }

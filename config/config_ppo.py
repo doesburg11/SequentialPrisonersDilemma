@@ -5,7 +5,7 @@ Edit this file to change PPO behavior without touching tuning code.
 
 config_ppo = {
     # Tune control
-    "tune_iters": 50,
+    "tune_iters": 100,
     # Core PPO learning
     "lr": 5e-4,
     "gamma": 0.99,

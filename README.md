@@ -259,37 +259,38 @@ Outputs:
 
 Result incorporated here:
 
-- Plot file: `checkpoints/sweep_n_sequential_pd/20260303_130810_199804/cooperation_vs_max_rounds_20260303_130810_199804.png`
-- Summary file: `checkpoints/sweep_n_sequential_pd/20260303_130810_199804/summary_20260303_130810_199804.json`
-- Seeds: `[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]` (10 runs per `n_sequential_games` value)
+- Plot file: `checkpoints/sweep_n_sequential_pd/20260305_001911_105156/cooperation_vs_n_sequential_games_20260305_001911_105156.png`
+- Summary file: `checkpoints/sweep_n_sequential_pd/20260305_001911_105156/summary_20260305_001911_105156.json`
+- Seeds: `[0, 1, ..., 19]` (20 runs per `n_sequential_games` value)
 - Confidence level: `95%`
 
 <div align="center">
-  <img src="assets/cooperation_vs_max_rounds_20260303_130810_199804.png" alt="Sequential Iterated Prisoner's Dilemma cooperation chart (10 seeds, 95% CI)" width="1000" />
-  <p><strong>Display 2: Mean cooperation rates (10 seeds) across the number of repeated prisoner's dilemma games, with 95% confidence bands.</strong></p>
+  <img src="assets/cooperation_vs_n_sequential_games_20260305_001911_105156.png" alt="Sequential Iterated Prisoner's Dilemma cooperation chart (20 seeds, 95% CI)" width="1000" />
+  <p><strong>Display 2: Mean cooperation rates (20 seeds) across the number of repeated prisoner's dilemma games, with 95% confidence bands.</strong></p>
 </div>
 
 Observed result (this run):
 
-- Cooperation is near zero across most horizons; both players are exactly at `0.0` for `n_sequential_games = 5, 10, 40, 90, 100` and close to zero at many other points.
-- The largest local bumps are:
-  - `n_sequential_games=50`: `player_1 mean = 0.048` (`95% CI [-0.038, 0.134]`), `player_2 mean = 0.070` (`95% CI [-0.024, 0.164]`)
-  - `n_sequential_games=65`: `player_1 mean = 0.035` (`95% CI [0.000, 0.071]`), `player_2 mean = 0.114` (`95% CI [-0.031, 0.259]`)
-  - `n_sequential_games=25`: `player_1 mean = 0.036`, `player_2 mean = 0.028`
-- Only `3/20` round settings exceed a mean cooperation of `0.02` for each player.
-- Confidence intervals mostly include `0`, especially for player 2, indicating unstable and seed-sensitive cooperation effects.
+- Cooperation is not uniformly near zero: both players exceed `0.10` at `n_sequential_games = 50` and `65`.
+- The largest cooperation windows are:
+  - `n_sequential_games=50`: `player_1 mean = 0.138` (`95% CI [0.050, 0.226]`), `player_2 mean = 0.116` (`95% CI [0.037, 0.195]`)
+  - `n_sequential_games=65`: `player_1 mean = 0.128` (`95% CI [0.035, 0.222]`), `player_2 mean = 0.115` (`95% CI [0.022, 0.209]`)
+  - `n_sequential_games=35`: `player_1 mean = 0.084` (`95% CI [-0.003, 0.172]`), `player_2 mean = 0.136` (`95% CI [0.008, 0.263]`)
+  - `n_sequential_games=75`: `player_1 mean = 0.077` (`95% CI [-0.004, 0.158]`), `player_2 mean = 0.121` (`95% CI [0.009, 0.233]`)
+- Low-cooperation settings still exist: both means are `<= 0.01` at `n_sequential_games = 5, 10, 15, 25`.
+- Confidence intervals include `0` for about half of the horizons (`10/20` for player 1, `9/20` for player 2), indicating substantial seed sensitivity.
 
 Interpretation:
 
-- With 10 seeds, the aggregate picture is more conservative than smaller-seed runs: cooperation is mostly weak and intermittent.
-- The dominant behavior is still close to defection, with a few non-robust local cooperation windows.
-- This remains consistent with the RL-vs-theory framing: independent PPO can create temporary cooperative pockets, but they do not appear broadly stable across horizons in this run.
+- With 20 seeds, cooperative pockets remain visible at specific horizons instead of disappearing into pure all-defect behavior.
+- The horizon effect is non-monotonic: cooperation rises in some mid/high ranges (`35`, `50`, `65`, `75`) but drops near zero in others.
+- Independent PPO still does not produce a uniformly robust cooperation profile across all horizons.
 
 How the sweep mechanism works end-to-end:
 
 1. Load base environment settings from `config_env` and sweep controls from `config_sweep_n_sequential_pd` in `config/config_env.py`.
 2. Read the list of `n_sequential_games` values to evaluate.
-3. For each `n_sequential_games` value and each seed (10 seeds in this run), generate timestamped per-seed files:
+3. For each `n_sequential_games` value and each seed (20 seeds in this run), generate timestamped per-seed files:
    - `config_env_<timestamp>.py`
    - `config_ppo_<timestamp>.py`
    - `metrics_<timestamp>.json`
