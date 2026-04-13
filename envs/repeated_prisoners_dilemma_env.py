@@ -1,4 +1,4 @@
-"""Simultaneous-action two-player Prisoner's Dilemma environment for RLlib."""
+"""Repeated two-player Prisoner's Dilemma environment for RLlib."""
 
 from __future__ import annotations
 
@@ -15,7 +15,8 @@ ACTION_NAMES = {
     DEFECT: "defect",
 }
 AGENT_IDS = ("player_1", "player_2")
-ENV_NAME = "sequential_prisoners_dilemma"
+ENV_NAME = "repeated_prisoners_dilemma"
+LEGACY_ENV_NAME = "sequential_prisoners_dilemma"
 
 PAYOFF_MATRIX: Dict[Tuple[int, int], Tuple[float, float]] = {
     (COOPERATE, COOPERATE): (3.0, 3.0),
@@ -25,22 +26,23 @@ PAYOFF_MATRIX: Dict[Tuple[int, int], Tuple[float, float]] = {
 }
 
 
-class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
+class RepeatedPrisonersDilemmaEnv(MultiAgentEnv):
     """Two-agent repeated Prisoner's Dilemma with simultaneous actions.
 
     Rules:
     - Both players choose actions each round.
     - A payoff is assigned from the joint action in that round.
-    - Episodes always run for a fixed horizon of `n_sequential_games`.
+    - Episodes always run for a fixed horizon of `n_rounds`.
     """
 
     def __init__(self, config=None):
         super().__init__()
         config = config or {}
 
-        self.n_sequential_games = int(config.get("n_sequential_games", 50))
-        if self.n_sequential_games <= 0:
-            raise ValueError("n_sequential_games must be > 0")
+        n_rounds = config.get("n_rounds", config.get("n_sequential_games", 50))
+        self.n_rounds = int(n_rounds)
+        if self.n_rounds <= 0:
+            raise ValueError("n_rounds must be > 0")
 
         # Observation = [last_own_action, last_opponent_action, round_progress]
         # last actions use -1.0 before first complete round.
@@ -67,7 +69,7 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
         self._last_joint_actions = (-1, -1)
         self.rounds_completed = 0
         self._episode_done = False
-        self._episode_horizon = self.n_sequential_games
+        self._episode_horizon = self.n_rounds
 
     def reset(self, *, seed=None, options=None):
         if seed is not None:
@@ -76,7 +78,7 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
         self._last_joint_actions = (-1, -1)
         self.rounds_completed = 0
         self._episode_done = False
-        self._episode_horizon = self.n_sequential_games
+        self._episode_horizon = self.n_rounds
 
         obs = {agent_id: self._build_obs(agent_id) for agent_id in AGENT_IDS}
         infos = {
@@ -152,3 +154,6 @@ class SequentialPrisonersDilemmaEnv(MultiAgentEnv):
 
     def _should_terminate_episode(self) -> bool:
         return self.rounds_completed >= self._episode_horizon
+
+
+SequentialPrisonersDilemmaEnv = RepeatedPrisonersDilemmaEnv

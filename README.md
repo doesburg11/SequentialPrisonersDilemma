@@ -6,9 +6,9 @@ This project studies a repeated Prisoner's Dilemma with two independent reinforc
 
 ## Cross-Repo Mapping
 
-`SequentialPrisonersDilemma` is the canonical implementation repo for the
-code-backed learned-cooperation repeated Prisoner's Dilemma experiment presented
-on `https://humanbehaviorpatterns.org/`.
+This repo is the canonical implementation for the code-backed learned-cooperation
+repeated Prisoner's Dilemma experiment presented on
+`https://humanbehaviorpatterns.org/`.
 
 The public website is built from the sibling `human-cooperation-site` repo.
 
@@ -31,7 +31,7 @@ Working rule:
 
 ## Environment and MARL Setup
 
-- Environment class: `envs/prisoners_dilemma_env.py`
+- Environment class: `envs/repeated_prisoners_dilemma_env.py`
 - Agent IDs: `player_1`, `player_2`
 - Action space: `0=cooperate`, `1=defect`
 - Reward matrix:
@@ -53,7 +53,7 @@ Working rule:
 
 Each episode is a repeated game with a fixed horizon:
 
-1. `fixed`: always run exactly `n_sequential_games`.
+1. `fixed`: always run exactly `n_rounds`.
 
 ## Research Question and Hypotheses
 
@@ -76,7 +76,7 @@ Recommended reporting:
 
 - Defection/cooperation rate by round index `t`
 - Mean episode return
-- Mean rounds (fixed at `n_sequential_games` by design)
+- Mean rounds (fixed at `n_rounds` by design)
 - Multiple random seeds (to detect equilibrium-selection effects)
 
 ## Tuning and Evaluation (RLlib 2.54.0)
@@ -121,7 +121,7 @@ Write machine-readable metrics for plotting or post-analysis:
 
 Useful options:
 
-- Adjust `n_sequential_games` in `config/config_env.py`.
+- Adjust `n_rounds` in `config/config_env.py`.
 
 Defection-gain check (approximate exploitability-style):
 
@@ -133,7 +133,7 @@ Configure this via `config_defection_gain_check` in `config/config_env.py`:
 
 - `checkpoint`
 - `checkpoint_root`
-- `n_sequential_games`
+- `n_rounds`
 - `episodes`
 - `seed`
 - `output_json`
@@ -196,7 +196,7 @@ Configure this via `config_stability_sweep` in `config/config_env.py`:
 - `python_executable`
 - `ppo_config`
 - `eval_episodes`
-- `n_sequential_games`
+- `n_rounds`
 - `max_reward_cv`
 - `max_cooperation_std`
 - `max_rounds_cv`
@@ -205,16 +205,16 @@ Configure this via `config_stability_sweep` in `config/config_env.py`:
 - `defection_gain_episodes`
 - `defection_gain_tol`
 
-`stability_sweep.py` now also auto-scales PPO batch settings by `n_sequential_games`
+`stability_sweep.py` now also auto-scales PPO batch settings by `n_rounds`
 to keep update statistics more comparable across round-length settings:
 
-- `train_batch_size_per_learner = max(1024, 64 * n_sequential_games)`
+- `train_batch_size_per_learner = max(1024, 64 * n_rounds)`
 - `minibatch_size = max(128, train_batch_size_per_learner // 8)` (rounded to a multiple of 32)
 - `num_epochs = 15` for smaller batches, `10` when `train_batch_size_per_learner >= 8192`
 
 Each seed run gets its own generated `config_ppo.py` with these effective values.
 During stability sweeps, these three keys override the corresponding values from the base
-`config/config_ppo.py` for fairness across `n_sequential_games` settings.
+`config/config_ppo.py` for fairness across `n_rounds` settings.
 
 `stability_sweep.py` can also run per-seed defection-gain checks automatically
 (no manual checkpoint insertion):
@@ -240,19 +240,19 @@ Output:
   - mean player reward gap
   - defection-gain non-positive rate across seeds (when enabled)
 
-## Sweep n_sequential_games vs Cooperation
+## Sweep n_rounds vs Cooperation
 
-Sweep these `n_sequential_games` values and plot both players' cooperation rates:
+Sweep these `n_rounds` values and plot both players' cooperation rates:
 
 `[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]`
 
 ```bash
-python -m scripts.sweep_n_sequential_pd
+python -m scripts.sweep_n_rounds_pd
 ```
 
-Set sweep controls in `config/config_env.py` under `config_sweep_n_sequential_pd`:
+Set sweep controls in `config/config_env.py` under `config_sweep_n_rounds_pd`:
 
-- `n_sequential_games_values`
+- `n_rounds_values`
 - `output_dir`
 - `python_executable`
 - `num_seeds`
@@ -264,33 +264,33 @@ Set sweep controls in `config/config_env.py` under `config_sweep_n_sequential_pd
 - `hypothesis_test_correction` (`holm` or `none`)
 
 To keep PPO updates comparable across horizons, the sweep now auto-scales batch settings
-per `n_sequential_games` by generating a per-run `config_ppo.py`:
+per `n_rounds` by generating a per-run `config_ppo.py`:
 
-- `train_batch_size_per_learner = max(1024, 64 * n_sequential_games)`
+- `train_batch_size_per_learner = max(1024, 64 * n_rounds)`
 - `minibatch_size = max(128, train_batch_size_per_learner // 8)` (rounded to a multiple of 32)
 - `num_epochs = 15` for smaller batches, `10` when `train_batch_size_per_learner >= 8192`
 
 This keeps the number of complete episodes per PPO update more stable as episode length grows.
-During this `n_sequential_games` sweep, these three keys override the corresponding values from the base
+During this `n_rounds` sweep, these three keys override the corresponding values from the base
 `config/config_ppo.py`.
-For each `n_sequential_games` value, the script now runs multiple seeds, computes mean cooperation per player,
+For each `n_rounds` value, the script now runs multiple seeds, computes mean cooperation per player,
 and plots confidence bands around each mean curve.
 
 Outputs:
 
-- Per-sweep run root in `checkpoints/sweep_n_sequential_pd/<run_timestamp>/`
-- Per-round runs in `checkpoints/sweep_n_sequential_pd/<run_timestamp>/n_sequential_games_<value>/`
-- Per-round, per-seed generated PPO config in `checkpoints/sweep_n_sequential_pd/<run_timestamp>/n_sequential_games_<value>/seed_<seed>/config_ppo_<run_timestamp>.py`
-- Per-round, per-seed generated env config in `checkpoints/sweep_n_sequential_pd/<run_timestamp>/n_sequential_games_<value>/seed_<seed>/config_env_<run_timestamp>.py`
-- Per-round, per-seed metrics in `checkpoints/sweep_n_sequential_pd/<run_timestamp>/n_sequential_games_<value>/seed_<seed>/metrics_<run_timestamp>.json`
-- Plot in `checkpoints/sweep_n_sequential_pd/<run_timestamp>/cooperation_vs_n_sequential_games_<run_timestamp>.png`
-- Summary JSON in `checkpoints/sweep_n_sequential_pd/<run_timestamp>/summary_<run_timestamp>.json`
+- Per-sweep run root in `checkpoints/sweep_n_rounds_pd/<run_timestamp>/`
+- Per-round runs in `checkpoints/sweep_n_rounds_pd/<run_timestamp>/n_rounds_<value>/`
+- Per-round, per-seed generated PPO config in `checkpoints/sweep_n_rounds_pd/<run_timestamp>/n_rounds_<value>/seed_<seed>/config_ppo_<run_timestamp>.py`
+- Per-round, per-seed generated env config in `checkpoints/sweep_n_rounds_pd/<run_timestamp>/n_rounds_<value>/seed_<seed>/config_env_<run_timestamp>.py`
+- Per-round, per-seed metrics in `checkpoints/sweep_n_rounds_pd/<run_timestamp>/n_rounds_<value>/seed_<seed>/metrics_<run_timestamp>.json`
+- Plot in `checkpoints/sweep_n_rounds_pd/<run_timestamp>/cooperation_vs_n_rounds_<run_timestamp>.png`
+- Summary JSON in `checkpoints/sweep_n_rounds_pd/<run_timestamp>/summary_<run_timestamp>.json`
 - Hypothesis test report in `summary_<run_timestamp>.json` under `hypothesis_testing` and per-result entries under `results[*].hypothesis_tests`
 
 Hypothesis testing details (two-sided + Holm):
 
 1. Unit of analysis:
-   - For each horizon `n_sequential_games` and each player separately, use the per-seed cooperation rates as samples.
+  - For each horizon `n_rounds` and each player separately, use the per-seed cooperation rates as samples.
    - With 20 horizons and 2 players, this yields `40` tests total per sweep run.
 2. Null and alternative:
    - `H0`: mean cooperation across seeds is `0`.
@@ -321,7 +321,7 @@ How to read the summary JSON:
 
 Tiny decision-table example (`alpha = 0.05`, Holm correction):
 
-| n_sequential_games | player   | mean cooperation | raw p-value | Holm-adjusted p-value | reject_null |
+| n_rounds | player   | mean cooperation | raw p-value | Holm-adjusted p-value | reject_null |
 | --- | --- | ---: | ---: | ---: | --- |
 | 5   | player_1 | 0.000000 | 1.000000 | 1.000000 | False |
 | 50  | player_1 | 0.138000 | 0.001400 | 0.055997 | False |
@@ -333,25 +333,25 @@ Reading this:
 
 Result incorporated here:
 
-- Plot file: `checkpoints/sweep_n_sequential_pd/20260305_001911_105156/cooperation_vs_n_sequential_games_20260305_001911_105156.png`
-- Summary file: `checkpoints/sweep_n_sequential_pd/20260305_001911_105156/summary_20260305_001911_105156.json`
-- Seeds: `[0, 1, ..., 19]` (20 runs per `n_sequential_games` value)
+- Plot file: `checkpoints/sweep_n_sequential_pd/20260305_001911_105156/cooperation_vs_n_sequential_games_20260305_001911_105156.png` (historical run, old naming)
+- Summary file: `checkpoints/sweep_n_sequential_pd/20260305_001911_105156/summary_20260305_001911_105156.json` (historical run, old naming)
+- Seeds: `[0, 1, ..., 19]` (20 runs per `n_rounds` value)
 - Confidence level: `95%`
 
 <div align="center">
-  <img src="assets/cooperation_vs_n_sequential_games_20260305_001911_105156.png" alt="Sequential Iterated Prisoner's Dilemma cooperation chart (20 seeds, 95% CI)" width="1000" />
+  <img src="assets/cooperation_vs_n_sequential_games_20260305_001911_105156.png" alt="Repeated Prisoner's Dilemma cooperation chart (20 seeds, 95% CI)" width="1000" />
   <p><strong>Display 2: Mean cooperation rates (20 seeds) across the number of repeated prisoner's dilemma games, with 95% confidence bands.</strong></p>
 </div>
 
 Observed result (this run):
 
-- Cooperation is not uniformly near zero: both players exceed `0.10` at `n_sequential_games = 50` and `65`.
+- Cooperation is not uniformly near zero: both players exceed `0.10` at `n_rounds = 50` and `65`.
 - The largest cooperation windows are:
-  - `n_sequential_games=50`: `player_1 mean = 0.138` (`95% CI [0.050, 0.226]`), `player_2 mean = 0.116` (`95% CI [0.037, 0.195]`)
-  - `n_sequential_games=65`: `player_1 mean = 0.128` (`95% CI [0.035, 0.222]`), `player_2 mean = 0.115` (`95% CI [0.022, 0.209]`)
-  - `n_sequential_games=35`: `player_1 mean = 0.084` (`95% CI [-0.003, 0.172]`), `player_2 mean = 0.136` (`95% CI [0.008, 0.263]`)
-  - `n_sequential_games=75`: `player_1 mean = 0.077` (`95% CI [-0.004, 0.158]`), `player_2 mean = 0.121` (`95% CI [0.009, 0.233]`)
-- Low-cooperation settings still exist: both means are `<= 0.01` at `n_sequential_games = 5, 10, 15, 25`.
+  - `n_rounds=50`: `player_1 mean = 0.138` (`95% CI [0.050, 0.226]`), `player_2 mean = 0.116` (`95% CI [0.037, 0.195]`)
+  - `n_rounds=65`: `player_1 mean = 0.128` (`95% CI [0.035, 0.222]`), `player_2 mean = 0.115` (`95% CI [0.022, 0.209]`)
+  - `n_rounds=35`: `player_1 mean = 0.084` (`95% CI [-0.003, 0.172]`), `player_2 mean = 0.136` (`95% CI [0.008, 0.263]`)
+  - `n_rounds=75`: `player_1 mean = 0.077` (`95% CI [-0.004, 0.158]`), `player_2 mean = 0.121` (`95% CI [0.009, 0.233]`)
+- Low-cooperation settings still exist: both means are `<= 0.01` at `n_rounds = 5, 10, 15, 25`.
 - Confidence intervals include `0` for about half of the horizons (`10/20` for player 1, `9/20` for player 2), indicating substantial seed sensitivity.
 - Under two-sided hypothesis tests with Holm correction over 40 tests, no `(n, player)` pair is significant at `alpha=0.05` in this run.
 
@@ -363,23 +363,23 @@ Interpretation:
 
 How the sweep mechanism works end-to-end:
 
-1. Load base environment settings from `config_env` and sweep controls from `config_sweep_n_sequential_pd` in `config/config_env.py`.
-2. Read the list of `n_sequential_games` values to evaluate.
-3. For each `n_sequential_games` value and each seed (20 seeds in this run), generate timestamped per-seed files:
+1. Load base environment settings from `config_env` and sweep controls from `config_sweep_n_rounds_pd` in `config/config_env.py`.
+2. Read the list of `n_rounds` values to evaluate.
+3. For each `n_rounds` value and each seed (20 seeds in this run), generate timestamped per-seed files:
    - `config_env_<timestamp>.py`
    - `config_ppo_<timestamp>.py`
    - `metrics_<timestamp>.json`
-4. Apply max-round-aware PPO scaling per `n_sequential_games`:
-   - `train_batch_size_per_learner = max(1024, 64 * n_sequential_games)`
+4. Apply max-round-aware PPO scaling per `n_rounds`:
+  - `train_batch_size_per_learner = max(1024, 64 * n_rounds)`
    - `minibatch_size = max(128, train_batch_size_per_learner // 8)` (rounded to multiple of 32)
    - `num_epochs = 15` or `10` for large batches
 5. Run `scripts/tune_eval_rllib.py` for each seed and collect cooperation metrics.
-6. Aggregate by `n_sequential_games`:
+6. Aggregate by `n_rounds`:
    - mean cooperation per player
    - standard deviation
    - confidence interval (normal approximation)
 7. Run two-sided hypothesis tests per player and horizon (`H0: mean cooperation across seeds = 0`) and apply multiple-testing correction.
 8. Plot mean lines plus confidence bands for both players.
 9. Write timestamped aggregate outputs:
-   - `checkpoints/sweep_n_sequential_pd/<run_timestamp>/cooperation_vs_n_sequential_games_<run_timestamp>.png`
-   - `checkpoints/sweep_n_sequential_pd/<run_timestamp>/summary_<run_timestamp>.json`
+  - `checkpoints/sweep_n_rounds_pd/<run_timestamp>/cooperation_vs_n_rounds_<run_timestamp>.png`
+  - `checkpoints/sweep_n_rounds_pd/<run_timestamp>/summary_<run_timestamp>.json`

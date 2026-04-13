@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Current File (.conda)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.conda/bin/python",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Tune Eval RLlib",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "scripts.tune_eval_rllib",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.conda/bin/python",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "integratedTerminal"
+    }
+  ]
+}

@@ -6,18 +6,34 @@ from __future__ import annotations
 import importlib.util
 import json
 import random
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import ray
-from envs.prisoners_dilemma_env import (
-    AGENT_IDS,
-    COOPERATE,
-    ENV_NAME,
-    SequentialPrisonersDilemmaEnv,
-)
+
+try:
+    from envs.repeated_prisoners_dilemma_env import (
+        AGENT_IDS,
+        COOPERATE,
+        ENV_NAME,
+        LEGACY_ENV_NAME,
+        RepeatedPrisonersDilemmaEnv,
+    )
+except ModuleNotFoundError:
+    project_root = Path(__file__).resolve().parents[1]
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    from envs.repeated_prisoners_dilemma_env import (
+        AGENT_IDS,
+        COOPERATE,
+        ENV_NAME,
+        LEGACY_ENV_NAME,
+        RepeatedPrisonersDilemmaEnv,
+    )
+
 from ray import tune
 from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.algorithms.ppo import PPO, PPOConfig
@@ -31,7 +47,12 @@ DEFAULT_ENV_CONFIG_PATH = PROJECT_ROOT / "config" / "config_env.py"
 
 
 def env_creator(env_config):
-    return SequentialPrisonersDilemmaEnv(env_config)
+    return RepeatedPrisonersDilemmaEnv(env_config)
+
+
+def register_envs() -> None:
+    register_env(ENV_NAME, env_creator)
+    register_env(LEGACY_ENV_NAME, env_creator)
 
 
 def policy_mapping_fn(agent_id, *args, **kwargs):
@@ -50,7 +71,7 @@ def load_ppo_config(path: str) -> tuple[Dict[str, Any], str]:
     if not resolved_path.exists():
         raise FileNotFoundError(f"PPO config file not found: {resolved_path}")
 
-    module_name = f"_sequential_pd_ppo_config_{abs(hash(str(resolved_path)))}"
+    module_name = f"_repeated_pd_ppo_config_{abs(hash(str(resolved_path)))}"
     spec = importlib.util.spec_from_file_location(module_name, resolved_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Could not load module spec from: {resolved_path}")
@@ -74,7 +95,7 @@ def load_env_config(path: str) -> tuple[Dict[str, Any], str]:
     if not resolved_path.exists():
         raise FileNotFoundError(f"Environment config file not found: {resolved_path}")
 
-    module_name = f"_sequential_pd_env_config_{abs(hash(str(resolved_path)))}"
+    module_name = f"_repeated_pd_env_config_{abs(hash(str(resolved_path)))}"
     spec = importlib.util.spec_from_file_location(module_name, resolved_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Could not load module spec from: {resolved_path}")
@@ -105,7 +126,10 @@ def resolve_run_config(config_env_path: Optional[str] = None) -> tuple[SimpleNam
     try:
         config_env["ppo_config"] = str(config_env["ppo_config"])
         config_env["eval_episodes"] = int(config_env["eval_episodes"])
-        config_env["n_sequential_games"] = int(config_env["n_sequential_games"])
+        n_rounds = config_env.get("n_rounds")
+        if n_rounds is None:
+            n_rounds = config_env["n_sequential_games"]
+        config_env["n_rounds"] = int(n_rounds)
         config_env["checkpoint_dir"] = str(config_env["checkpoint_dir"])
     except KeyError as exc:
         missing_key = exc.args[0]
@@ -113,8 +137,10 @@ def resolve_run_config(config_env_path: Optional[str] = None) -> tuple[SimpleNam
 
     if config_env["eval_episodes"] < 0:
         raise ValueError("eval_episodes must be >= 0")
-    if config_env["n_sequential_games"] <= 0:
-        raise ValueError("n_sequential_games must be > 0")
+    if config_env["n_rounds"] <= 0:
+        raise ValueError("n_rounds must be > 0")
+
+    config_env.pop("n_sequential_games", None)
 
     seed = config_env.get("seed")
     if seed is not None:
@@ -270,9 +296,9 @@ def build_ppo_config(
     resource_config: Dict[str, Any],
 ) -> PPOConfig:
     env_config = {
-        "n_sequential_games": args.n_sequential_games,
+        "n_rounds": args.n_rounds,
     }
-    register_env(ENV_NAME, env_creator)
+    register_envs()
 
     policies = {f"policy_{agent_id}" for agent_id in AGENT_IDS}
     config = PPOConfig()
@@ -440,7 +466,7 @@ def compute_eval_action(algo: Algorithm, policy_id: str, observation) -> int:
 
 
 def evaluate(algo: Algorithm, episodes: int, env_config: Dict) -> Dict:
-    env = SequentialPrisonersDilemmaEnv(env_config)
+    env = RepeatedPrisonersDilemmaEnv(env_config)
 
     total_rewards = {agent: 0.0 for agent in AGENT_IDS}
     action_counts = {agent: 0 for agent in AGENT_IDS}
@@ -602,11 +628,11 @@ def main(config_env_path: Optional[str] = None):
         if torch is not None and hasattr(torch, "manual_seed"):
             torch.manual_seed(run_config.seed)
     env_config = {
-        "n_sequential_games": run_config.n_sequential_games,
+        "n_rounds": run_config.n_rounds,
     }
 
     ray.init(ignore_reinit_error=True, include_dashboard=False)
-    register_env(ENV_NAME, env_creator)
+    register_envs()
 
     tune_history = []
     checkpoint_path = None

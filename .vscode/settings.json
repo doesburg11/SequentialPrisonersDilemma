@@ -1,7 +1,11 @@
 {
     "python.defaultInterpreterPath": "${workspaceFolder}/.conda/bin/python",
-    "python.terminal.activateEnvironment": true,
-    "python.terminal.activateEnvInCurrentTerminal": true,
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}",
+        "${workspaceFolder}/.conda/lib/python3.12/site-packages"
+    ],
+    "python.terminal.activateEnvironment": false,
+    "python.terminal.activateEnvInCurrentTerminal": false,
     "python-envs.defaultEnvManager": "ms-python.python:conda",
     "python-envs.defaultPackageManager": "ms-python.python:conda",
     "terminal.integrated.enablePersistentSessions": false,

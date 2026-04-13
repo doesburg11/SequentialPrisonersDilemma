@@ -6,20 +6,20 @@ Edit this file to control tune/eval behavior without CLI flags.
 config_env = {
     # Paths
     "ppo_config": "config/config_ppo.py",
-    "checkpoint_dir": "checkpoints/sequential_pd_ppo",
+    "checkpoint_dir": "checkpoints/repeated_pd_ppo",
     "from_checkpoint": None,
     "metrics_out": None,
     # Evaluation
     "eval_episodes": 100,
     # Environment horizon
-    "n_sequential_games": 100,
+    "n_rounds": 100,
     # Reproducibility
     "seed": None,
 }
 
-# Sweep-only settings for scripts/sweep_n_sequential_pd.py.
-config_sweep_n_sequential_pd = {
-    "n_sequential_games_values": [
+# Sweep-only settings for scripts/sweep_n_rounds_pd.py.
+config_sweep_n_rounds_pd = {
+    "n_rounds_values": [
         5,
         10,
         15,
@@ -41,7 +41,7 @@ config_sweep_n_sequential_pd = {
         95,
         100,
     ],
-    "output_dir": "checkpoints/sweep_n_sequential_pd",
+    "output_dir": "checkpoints/sweep_n_rounds_pd",
     "python_executable": None,
     "num_seeds": 20,
     "seed_start": 0,
@@ -60,7 +60,7 @@ config_stability_sweep = {
     "python_executable": None,
     "ppo_config": "config/config_ppo.py",
     "eval_episodes": 100,
-    "n_sequential_games": 50,
+    "n_rounds": 50,
     "max_reward_cv": 0.15,
     "max_cooperation_std": 0.10,
     "max_rounds_cv": 0.10,
@@ -73,10 +73,13 @@ config_stability_sweep = {
 # Settings for scripts/check_defection_gain.py.
 config_defection_gain_check = {
     "checkpoint": "latest",
-    "checkpoint_root": "checkpoints/sequential_pd_ppo",
-    "n_sequential_games": 100,
+    "checkpoint_root": "checkpoints/repeated_pd_ppo",
+    "n_rounds": 100,
     "episodes": 100,
     "seed": None,
     "output_json": None,
     "gain_tol": 1e-9,
 }
+
+# Legacy alias for older sweep configs.
+config_sweep_n_sequential_pd = config_sweep_n_rounds_pd
