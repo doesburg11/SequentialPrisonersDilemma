@@ -4,6 +4,31 @@
 
 This project studies a repeated Prisoner's Dilemma with two independent reinforcement learning agents. The algorithm used is PPO via RLlib 2.54.0. 
 
+## Cross-Repo Mapping
+
+`SequentialPrisonersDilemma` is the canonical implementation repo for the
+code-backed learned-cooperation repeated Prisoner's Dilemma experiment presented
+on `https://humanbehaviorpatterns.org/`.
+
+The public website is built from the sibling `human-cooperation-site` repo.
+
+Current required mapping:
+
+- this repo's repeated Prisoner's Dilemma PPO study <-> `docs/learned-cooperation/repeated-prisoners-dilemma/ppo-study.md` in `human-cooperation-site`
+
+Related framing pages in `human-cooperation-site`:
+
+- `docs/learned-cooperation/learned-cooperation.md`
+- `docs/learned-cooperation/prisoners-dilemma/prisoners-dilemma.md`
+- `docs/learned-cooperation/repeated-prisoners-dilemma/repeated-prisoners-dilemma.md`
+
+Working rule:
+
+- when the experiment design, assumptions, or reported results change here,
+  review the matching website pages
+- when the website explanations change there, keep them faithful to the Python
+  implementation and reported outputs here
+
 ## Environment and MARL Setup
 
 - Environment class: `envs/prisoners_dilemma_env.py`
