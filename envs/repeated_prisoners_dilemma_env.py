@@ -16,7 +16,6 @@ ACTION_NAMES = {
 }
 AGENT_IDS = ("player_1", "player_2")
 ENV_NAME = "repeated_prisoners_dilemma"
-LEGACY_ENV_NAME = "sequential_prisoners_dilemma"
 
 PAYOFF_MATRIX: Dict[Tuple[int, int], Tuple[float, float]] = {
     (COOPERATE, COOPERATE): (3.0, 3.0),
@@ -39,7 +38,7 @@ class RepeatedPrisonersDilemmaEnv(MultiAgentEnv):
         super().__init__()
         config = config or {}
 
-        n_rounds = config.get("n_rounds", config.get("n_sequential_games", 50))
+        n_rounds = config.get("n_rounds", 50)
         self.n_rounds = int(n_rounds)
         if self.n_rounds <= 0:
             raise ValueError("n_rounds must be > 0")
@@ -154,6 +153,3 @@ class RepeatedPrisonersDilemmaEnv(MultiAgentEnv):
 
     def _should_terminate_episode(self) -> bool:
         return self.rounds_completed >= self._episode_horizon
-
-
-SequentialPrisonersDilemmaEnv = RepeatedPrisonersDilemmaEnv

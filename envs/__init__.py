@@ -6,10 +6,8 @@ from .repeated_prisoners_dilemma_env import (
     COOPERATE,
     DEFECT,
     ENV_NAME,
-    LEGACY_ENV_NAME,
     PAYOFF_MATRIX,
     RepeatedPrisonersDilemmaEnv,
-    SequentialPrisonersDilemmaEnv,
 )
 
 __all__ = [
@@ -18,8 +16,6 @@ __all__ = [
     "COOPERATE",
     "DEFECT",
     "ENV_NAME",
-    "LEGACY_ENV_NAME",
     "PAYOFF_MATRIX",
     "RepeatedPrisonersDilemmaEnv",
-    "SequentialPrisonersDilemmaEnv",
 ]

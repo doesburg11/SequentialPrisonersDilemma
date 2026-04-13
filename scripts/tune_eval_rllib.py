@@ -19,7 +19,6 @@ try:
         AGENT_IDS,
         COOPERATE,
         ENV_NAME,
-        LEGACY_ENV_NAME,
         RepeatedPrisonersDilemmaEnv,
     )
 except ModuleNotFoundError:
@@ -30,7 +29,6 @@ except ModuleNotFoundError:
         AGENT_IDS,
         COOPERATE,
         ENV_NAME,
-        LEGACY_ENV_NAME,
         RepeatedPrisonersDilemmaEnv,
     )
 
@@ -52,7 +50,6 @@ def env_creator(env_config):
 
 def register_envs() -> None:
     register_env(ENV_NAME, env_creator)
-    register_env(LEGACY_ENV_NAME, env_creator)
 
 
 def policy_mapping_fn(agent_id, *args, **kwargs):
