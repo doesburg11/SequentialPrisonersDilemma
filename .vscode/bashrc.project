@@ -1,0 +1,31 @@
+export CONDA_AUTO_ACTIVATE_BASE=false
+export HISTFILE=/dev/null
+
+if [ -f /home/doesburg/miniconda3/etc/profile.d/conda.sh ]; then
+  . /home/doesburg/miniconda3/etc/profile.d/conda.sh
+
+  conda() {
+    local cmd="${1-__missing__}"
+
+    if [ "$cmd" = "activate" ] && [ "${2-}" = "base" ]; then
+      printf '%s\n' 'base activation is disabled in this workspace terminal' >&2
+      return 1
+    fi
+
+    case "$cmd" in
+      activate|deactivate)
+        __conda_activate "$@"
+        ;;
+      install|update|upgrade|remove|uninstall)
+        __conda_exe "$@" || return
+        __conda_activate reactivate
+        ;;
+      *)
+        __conda_exe "$@"
+        ;;
+    esac
+  }
+
+  conda deactivate >/dev/null 2>&1 || true
+  conda activate /home/doesburg/Projects/LearnedCooperation/.conda >/dev/null 2>&1 || true
+fi

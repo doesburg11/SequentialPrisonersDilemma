@@ -1,4 +1,20 @@
 {
+    "python.defaultInterpreterPath": "${workspaceFolder}/.conda/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.terminal.activateEnvInCurrentTerminal": true,
     "python-envs.defaultEnvManager": "ms-python.python:conda",
-    "python-envs.defaultPackageManager": "ms-python.python:conda"
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "terminal.integrated.enablePersistentSessions": false,
+    "terminal.integrated.defaultProfile.linux": "bash (project .conda)",
+    "terminal.integrated.profiles.linux": {
+        "bash (project .conda)": {
+            "path": "/bin/bash",
+            "args": [
+                "--init-file",
+                "${workspaceFolder}/.vscode/bashrc.project",
+                "-i"
+            ],
+            "icon": "terminal-bash"
+        }
+    }
 }
