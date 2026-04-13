@@ -1,2 +1,4 @@
 checkpoints/
 ray_results/
+__pycache__/
+*.pyc

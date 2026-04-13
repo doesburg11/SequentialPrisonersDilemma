@@ -123,10 +123,7 @@ def resolve_run_config(config_env_path: Optional[str] = None) -> tuple[SimpleNam
     try:
         config_env["ppo_config"] = str(config_env["ppo_config"])
         config_env["eval_episodes"] = int(config_env["eval_episodes"])
-        n_rounds = config_env.get("n_rounds")
-        if n_rounds is None:
-            n_rounds = config_env["n_sequential_games"]
-        config_env["n_rounds"] = int(n_rounds)
+        config_env["n_rounds"] = int(config_env["n_rounds"])
         config_env["checkpoint_dir"] = str(config_env["checkpoint_dir"])
     except KeyError as exc:
         missing_key = exc.args[0]
@@ -136,8 +133,6 @@ def resolve_run_config(config_env_path: Optional[str] = None) -> tuple[SimpleNam
         raise ValueError("eval_episodes must be >= 0")
     if config_env["n_rounds"] <= 0:
         raise ValueError("n_rounds must be > 0")
-
-    config_env.pop("n_sequential_games", None)
 
     seed = config_env.get("seed")
     if seed is not None:

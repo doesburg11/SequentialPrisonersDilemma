@@ -60,7 +60,6 @@ DEFAULT_SWEEP_CONFIG = {
     "hypothesis_test_correction": "holm",
 }
 SWEEP_CONFIG_VAR = "config_sweep_n_rounds_pd"
-LEGACY_SWEEP_CONFIG_VAR = "config_sweep_n_sequential_pd"
 
 
 def _resolve_existing_file(path: str) -> Path:
@@ -114,17 +113,13 @@ def _load_config_env(path: str) -> tuple[Dict, str, Dict]:
             f"`config_env` must be a dict, got {type(config_env).__name__} in {resolved_path}"
         )
 
-    raw_sweep_config = getattr(module, SWEEP_CONFIG_VAR, None)
-    if raw_sweep_config is None:
-        raw_sweep_config = getattr(module, LEGACY_SWEEP_CONFIG_VAR, {})
-    if raw_sweep_config is None:
-        raw_sweep_config = {}
+    raw_sweep_config = getattr(module, SWEEP_CONFIG_VAR, {})
     if not isinstance(raw_sweep_config, dict):
         raise TypeError(
             f"`{SWEEP_CONFIG_VAR}` must be a dict, got "
             f"{type(raw_sweep_config).__name__} in {resolved_path}"
         )
-    allowed_sweep_keys = set(DEFAULT_SWEEP_CONFIG.keys()) | {"n_sequential_games_values"}
+    allowed_sweep_keys = set(DEFAULT_SWEEP_CONFIG.keys())
     unknown_sweep_keys = sorted(set(raw_sweep_config.keys()) - allowed_sweep_keys)
     if unknown_sweep_keys:
         raise ValueError(f"Unknown keys in `{SWEEP_CONFIG_VAR}`: {unknown_sweep_keys}")
@@ -132,10 +127,6 @@ def _load_config_env(path: str) -> tuple[Dict, str, Dict]:
     sweep_config = dict(DEFAULT_SWEEP_CONFIG)
     sweep_config["n_rounds_values"] = list(DEFAULT_SWEEP_CONFIG["n_rounds_values"])
     sweep_config.update(raw_sweep_config)
-    if "n_sequential_games_values" in sweep_config and "n_rounds_values" not in raw_sweep_config:
-        sweep_config["n_rounds_values"] = sweep_config.pop("n_sequential_games_values")
-    else:
-        sweep_config.pop("n_sequential_games_values", None)
     sweep_config["n_rounds_values"] = _parse_n_rounds_values(sweep_config["n_rounds_values"])
     return dict(config_env), str(resolved_path), sweep_config
 
@@ -541,7 +532,6 @@ def main(config_env_path: str | None = None):
 
             config_env["ppo_config"] = str(ppo_config_run_path)
             config_env["n_rounds"] = int(n_rounds)
-            config_env.pop("n_sequential_games", None)
             config_env["seed"] = int(seed)
             config_env["checkpoint_dir"] = str(checkpoint_dir)
             config_env["metrics_out"] = str(metrics_path)

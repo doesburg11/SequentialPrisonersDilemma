@@ -333,14 +333,14 @@ Reading this:
 
 Result incorporated here:
 
-- Plot file: `checkpoints/sweep_n_sequential_pd/20260305_001911_105156/cooperation_vs_n_sequential_games_20260305_001911_105156.png` (historical run, old naming)
-- Summary file: `checkpoints/sweep_n_sequential_pd/20260305_001911_105156/summary_20260305_001911_105156.json` (historical run, old naming)
+- Plot asset: `assets/cooperation_vs_n_rounds_20260305_001911_105156.png`
+- Underlying summary follows the standard sweep output pattern: `checkpoints/sweep_n_rounds_pd/<run_timestamp>/summary_<run_timestamp>.json`
 - Seeds: `[0, 1, ..., 19]` (20 runs per `n_rounds` value)
 - Confidence level: `95%`
 
 <div align="center">
-  <img src="assets/cooperation_vs_n_sequential_games_20260305_001911_105156.png" alt="Repeated Prisoner's Dilemma cooperation chart (20 seeds, 95% CI)" width="1000" />
-  <p><strong>Display 2: Mean cooperation rates (20 seeds) across the number of repeated prisoner's dilemma games, with 95% confidence bands.</strong></p>
+  <img src="assets/cooperation_vs_n_rounds_20260305_001911_105156.png" alt="Repeated Prisoner's Dilemma cooperation by n_rounds (20 seeds, 95% CI)" width="1000" />
+  <p><strong>Display 2: Mean cooperation rates (20 seeds) across `n_rounds`, with 95% confidence bands.</strong></p>
 </div>
 
 Observed result (this run):

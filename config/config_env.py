@@ -80,6 +80,3 @@ config_defection_gain_check = {
     "output_json": None,
     "gain_tol": 1e-9,
 }
-
-# Legacy alias for older sweep configs.
-config_sweep_n_sequential_pd = config_sweep_n_rounds_pd
