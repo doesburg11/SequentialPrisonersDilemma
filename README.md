@@ -6,9 +6,17 @@ This project studies a repeated Prisoner's Dilemma with two independent reinforc
 
 ## Cross-Repo Mapping
 
-This repo is the canonical implementation for the code-backed learned-cooperation
-repeated Prisoner's Dilemma experiment presented on
-`https://humanbehaviorpatterns.org/`.
+`LearnedCooperation` contains the canonical Python implementation for the
+code-backed learned-cooperation repeated Prisoner's Dilemma experiment presented
+on `https://humanbehaviorpatterns.org/`. Evolutionary change is intentionally
+out of scope here and is handled in the companion repositories
+`EvolvedCooperation` and `EvolvedAndLearnedCooperation`.
+
+The cooperation model repositories are separated by mechanism:
+
+- `EvolvedCooperation`: evolutionary dynamics only; lifetime learning is out of scope.
+- `LearnedCooperation`: lifetime learning only; evolutionary change is out of scope.
+- `EvolvedAndLearnedCooperation`: coupled evolutionary and lifetime-learning dynamics.
 
 The public website is built from the sibling `human-cooperation-site` repo.
 
